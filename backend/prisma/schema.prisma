@@ -1,0 +1,11 @@
+// New file: backend/prisma/schema.prisma
+// Initial schema configuration. Domain models will be added through reviewed migrations.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
