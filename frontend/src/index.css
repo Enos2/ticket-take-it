@@ -1,15 +1,26 @@
 /* ==========================================
    FILE: frontend/src/index.css
-   PURPOSE: Global stylesheet with Tailwind v4 import.
+   PURPOSE: Global stylesheet with custom premium palette.
    ========================================== */
 @import "tailwindcss";
 
+@theme {
+  --color-dark-base: #0B0B0D;      /* Deep black */
+  --color-dark-surface: #18181B;   /* Charcoal */
+  --color-brand-red: #E32636;      /* Cinematic red */
+  --color-brand-gold: #C9A45C;     /* Muted gold */
+  --color-text-main: #F5F5F5;      /* Off-white */
+  --color-text-muted: #A1A1AA;     /* Muted gray */
+}
+
 body {
-  @apply bg-gray-50 text-gray-900;
+  background-color: var(--color-dark-base);
+  color: var(--color-text-main);
   font-family: system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
 }
 /* ==========================================
    END OF FILE: frontend/src/index.css
    LOCATION: frontend/src/index.css
-   LAST UPDATED: October 19, 2026
+   LAST UPDATED: October 20, 2026
    ========================================== */

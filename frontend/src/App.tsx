@@ -1,11 +1,21 @@
 // ==========================================
 // FILE: frontend/src/App.tsx
-// PURPOSE: Sets up routing and layout.
+// PURPOSE: Sets up routing.
 // ==========================================
-import { BrowserRouter, Routes, Route, Link } from "react-router-dom";
+import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import Navbar from "./components/Navbar";
+import Home from "./pages/public/Home";
 import Events from "./pages/public/Events";
+import EventDetail from "./pages/public/EventDetail";
 import Login from "./pages/public/Login";
+import Register from "./pages/public/Register";
+import UserDashboard from "./pages/user/UserDashboard";
+import DashboardLayout from "./components/layout/DashboardLayout";
+import SellerDashboard from "./pages/seller/SellerDashboard";
+import CreateEvent from "./pages/seller/CreateEvent";
+import AdminDashboard from "./pages/admin/AdminDashboard";
+import ProtectedRoute from "./components/ProtectedRoute";
 
 const queryClient = new QueryClient();
 
@@ -13,23 +23,32 @@ export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
-        <nav className="bg-white shadow-sm border-b border-gray-200">
-          <div className="max-w-6xl mx-auto px-4 py-4 flex justify-between items-center">
-            <Link to="/" className="text-2xl font-black text-brand-600 tracking-tight">Ticket Take It</Link>
-            <div className="space-x-6 flex items-center">
-              <Link to="/events" className="text-gray-600 hover:text-gray-900 font-medium">Events</Link>
-              <Link to="/login" className="bg-brand-600 text-white px-4 py-2 rounded-md hover:bg-brand-700 transition font-medium">Login</Link>
-            </div>
-          </div>
-        </nav>
+        <Routes>
+          {/* Public Routes */}
+          <Route path="/" element={<><Navbar /><Home /></>} />
+          <Route path="/events" element={<><Navbar /><Events /></>} />
+          <Route path="/events/:id" element={<><Navbar /><EventDetail /></>} />
+          <Route path="/login" element={<><Navbar /><Login /></>} />
+          <Route path="/register" element={<><Navbar /><Register /></>} />
 
-        <main className="py-8">
-          <Routes>
-            <Route path="/" element={<Events />} />
-            <Route path="/events" element={<Events />} />
-            <Route path="/login" element={<Login />} />
-          </Routes>
-        </main>
+          {/* Protected Routes */}
+          <Route element={<ProtectedRoute />}>
+            
+            <Route path="/dashboard" element={<DashboardLayout />}>
+              <Route index element={<UserDashboard />} />
+            </Route>
+
+            <Route path="/seller" element={<DashboardLayout />}>
+              <Route index element={<SellerDashboard />} />
+              <Route path="create-event" element={<CreateEvent />} />
+            </Route>
+
+            <Route path="/admin" element={<DashboardLayout />}>
+              <Route index element={<AdminDashboard />} />
+            </Route>
+
+          </Route>
+        </Routes>
       </BrowserRouter>
     </QueryClientProvider>
   );
@@ -37,5 +56,5 @@ export default function App() {
 // ==========================================
 // END OF FILE: frontend/src/App.tsx
 // LOCATION: frontend/src/App.tsx
-// LAST UPDATED: October 19, 2026
+// LAST UPDATED: October 20, 2026
 // ==========================================
