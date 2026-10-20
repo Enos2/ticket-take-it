@@ -1,19 +1,19 @@
-// New file: frontend/src/main.tsx
-// Ticket Take It — frontend entry point.
+// ==========================================
+// FILE: frontend/src/main.tsx
+// PURPOSE: React entry point.
+// ==========================================
+import React from 'react'
+import ReactDOM from 'react-dom/client'
+import App from './App.tsx'
+import './index.css'
 
-import React from "react";
-import { createRoot } from "react-dom/client";
-import { App } from "./pages/App.js";
-import "./styles.css";
-
-const rootElement = document.getElementById("root");
-
-if (!rootElement) {
-  throw new Error("Root element #root was not found.");
-}
-
-createRoot(rootElement).render(
+ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <App />
   </React.StrictMode>,
-);
+)
+// ==========================================
+// END OF FILE: frontend/src/main.tsx
+// LOCATION: frontend/src/main.tsx
+// LAST UPDATED: October 19, 2026
+// ==========================================

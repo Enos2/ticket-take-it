@@ -1,18 +1,28 @@
+// ==========================================
+// FILE: backend/tsconfig.json
+// PURPOSE: Updated the module resolution to fix global CommonJS import errors.
+// ==========================================
+
 {
   "compilerOptions": {
     "target": "ES2022",
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
-    "rootDir": "src",
-    "outDir": "dist",
+    "lib": ["ES2022"],
+    "outDir": "./dist",
+    "rootDir": "./src",
     "strict": true,
-    "noUncheckedIndexedAccess": true,
-    "exactOptionalPropertyTypes": true,
     "esModuleInterop": true,
+    "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
-    "skipLibCheck": true
+    "resolveJsonModule": true
   },
-  "include": [
-    "src/**/*.ts"
-  ]
+  "include": ["src/**/*.ts"],
+  "exclude": ["node_modules", "dist"]
 }
+
+// ==========================================
+// END OF FILE: backend/tsconfig.json
+// LOCATION: backend/tsconfig.json
+// LAST UPDATED: October 19, 2026
+// ==========================================

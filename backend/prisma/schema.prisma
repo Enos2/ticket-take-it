@@ -1,6 +1,7 @@
-// New file: backend/prisma/schema.prisma
-// Initial schema configuration. Domain models will be added through reviewed migrations.
-
+// ==========================================
+// FILE: backend/prisma/schema.prisma
+// PURPOSE: Defines the PostgreSQL database schema.
+// ==========================================
 generator client {
   provider = "prisma-client-js"
 }
@@ -9,3 +10,193 @@ datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
 }
+
+enum Role {
+  USER
+  SELLER
+  ADMIN
+}
+
+enum SellerStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  SUSPENDED
+}
+
+enum EventStatus {
+  DRAFT
+  PUBLISHED
+  SOLD_OUT
+  CANCELLED
+  COMPLETED
+}
+
+enum TicketTier {
+  EARLY_BIRD
+  REGULAR
+  VIP
+  GROUP
+}
+
+enum OrderStatus {
+  PENDING
+  RESERVED
+  PAID
+  CANCELLED
+  REFUNDED
+  EXPIRED
+}
+
+enum PaymentProvider {
+  STRIPE
+  MPESA
+  MANUAL
+}
+
+enum PaymentStatus {
+  PENDING
+  SUCCEEDED
+  FAILED
+  REFUNDED
+}
+
+model User {
+  id            String        @id @default(cuid())
+  email         String        @unique
+  passwordHash  String
+  fullName      String
+  phone         String?
+  role          Role          @default(USER)
+  emailVerified Boolean       @default(false)
+  isActive      Boolean       @default(true)
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  sellerProfile SellerProfile?
+  orders        Order[]
+  refreshTokens RefreshToken[]
+  @@index([email])
+}
+
+model RefreshToken {
+  id        String    @id @default(cuid())
+  token     String    @unique
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+  @@index([userId])
+}
+
+model SellerProfile {
+  id            String       @id @default(cuid())
+  userId        String       @unique
+  user          User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  businessName  String
+  businessEmail String
+  businessPhone String?
+  payoutMethod  String?
+  payoutDetails String?
+  status        SellerStatus @default(PENDING)
+  approvedAt    DateTime?
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+  events Event[]
+}
+
+model Event {
+  id          String        @id @default(cuid())
+  sellerId    String
+  seller      SellerProfile @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  title       String
+  slug        String        @unique
+  description String
+  venue       String
+  city        String
+  country     String
+  startsAt    DateTime
+  endsAt      DateTime
+  bannerUrl   String?
+  status      EventStatus   @default(DRAFT)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  ticketTypes TicketType[]
+  @@index([sellerId])
+  @@index([status, startsAt])
+}
+
+model TicketType {
+  id           String     @id @default(cuid())
+  eventId      String
+  event        Event      @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  name         String
+  description  String?
+  tier         TicketTier @default(REGULAR)
+  priceCents   Int
+  currency     String     @default("USD")
+  quantity     Int
+  sold         Int        @default(0)
+  startsAt     DateTime?
+  endsAt       DateTime?
+  isGroup      Boolean    @default(false)
+  minGroupSize Int?
+  maxGroupSize Int?
+  isActive     Boolean    @default(true)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  orderItems   OrderItem[]
+  @@index([eventId, tier])
+}
+
+model Order {
+  id                   String      @id @default(cuid())
+  reference            String      @unique
+  userId               String
+  user                 User        @relation(fields: [userId], references: [id])
+  status               OrderStatus @default(PENDING)
+  totalCents           Int
+  currency             String      @default("USD")
+  reservationExpiresAt DateTime?
+  paidAt               DateTime?
+  createdAt            DateTime    @default(now())
+  updatedAt            DateTime    @updatedAt
+  items    OrderItem[]
+  payments Payment[]
+  @@index([userId])
+  @@index([status])
+}
+
+model OrderItem {
+  id             String     @id @default(cuid())
+  orderId        String
+  order          Order      @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  ticketTypeId   String
+  ticketType     TicketType @relation(fields: [ticketTypeId], references: [id])
+  quantity       Int
+  unitPriceCents Int
+  subtotalCents  Int
+  @@index([orderId])
+  @@index([ticketTypeId])
+}
+
+model Payment {
+  id          String          @id @default(cuid())
+  orderId     String
+  order       Order           @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  provider    PaymentProvider
+  providerRef String?
+  status      PaymentStatus   @default(PENDING)
+  amountCents Int
+  currency    String          @default("USD")
+  metadata    Json?
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+  @@index([orderId])
+  @@index([providerRef])
+}
+// ==========================================
+// END OF FILE: backend/prisma/schema.prisma
+// LOCATION: backend/prisma/schema.prisma
+// LAST UPDATED: October 19, 2026
+// ==========================================

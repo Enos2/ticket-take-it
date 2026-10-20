@@ -1,0 +1,15 @@
+// ==========================================
+// FILE: backend/.gitignore
+// PURPOSE: Prevents Git from uploading secrets and node_modules.
+// ==========================================
+node_modules/
+dist/
+.env
+.env.local
+*.log
+.DS_Store
+// ==========================================
+// END OF FILE: backend/.gitignore
+// LOCATION: backend/.gitignore
+// LAST UPDATED: October 19, 2026
+// ==========================================

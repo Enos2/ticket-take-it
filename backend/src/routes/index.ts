@@ -1,0 +1,25 @@
+// ==========================================
+// FILE: backend/src/routes/index.ts
+// PURPOSE: Master router.
+// ==========================================
+import { Router } from "express";
+import authRoutes from "../modules/auth/auth.routes";
+import usersRoutes from "../modules/users/users.routes";
+import sellersRoutes from "../modules/sellers/sellers.routes";
+import eventsRoutes from "../modules/events/events.routes";
+import ordersRoutes from "../modules/orders/orders.routes";
+
+const router = Router();
+
+router.use("/auth", authRoutes);
+router.use("/users", usersRoutes);
+router.use("/sellers", sellersRoutes);
+router.use("/events", eventsRoutes);
+router.use("/orders", ordersRoutes);
+
+export default router;
+// ==========================================
+// END OF FILE: backend/src/routes/index.ts
+// LOCATION: backend/src/routes/index.ts
+// LAST UPDATED: October 19, 2026
+// ==========================================

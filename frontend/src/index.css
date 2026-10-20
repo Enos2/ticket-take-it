@@ -1,0 +1,15 @@
+/* ==========================================
+   FILE: frontend/src/index.css
+   PURPOSE: Global stylesheet with Tailwind v4 import.
+   ========================================== */
+@import "tailwindcss";
+
+body {
+  @apply bg-gray-50 text-gray-900;
+  font-family: system-ui, -apple-system, sans-serif;
+}
+/* ==========================================
+   END OF FILE: frontend/src/index.css
+   LOCATION: frontend/src/index.css
+   LAST UPDATED: October 19, 2026
+   ========================================== */

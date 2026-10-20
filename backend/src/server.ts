@@ -1,24 +1,25 @@
-// New file: backend/src/server.ts
-// Ticket Take It — API entry point.
+// ==========================================
+// FILE: backend/src/server.ts
+// PURPOSE: Starts the server.
+// ==========================================
+import app from "./app";
+import { env } from "./config/env";
+import { logger } from "./utils/logger";
+import { prisma } from "./config/database";
 
-import { app } from "./app.js";
-import { env } from "./config/env.js";
-
-const server = app.listen(env.API_PORT, () => {
-  console.info(`Ticket Take It API listening on port ${env.API_PORT}`);
+const server = app.listen(env.PORT, () => {
+  logger.info(`🚀 Ticket Take It API running on http://localhost:${env.PORT}`);
 });
 
-const shutdown = (signal: string) => {
-  console.info(`Received ${signal}; shutting down gracefully.`);
-  server.close((error) => {
-    if (error) {
-      console.error("Server shutdown failed.");
-      process.exitCode = 1;
-      return;
-    }
+process.on("SIGINT", async () => {
+  logger.info("Shutting down...");
+  server.close(async () => {
+    await prisma.$disconnect();
     process.exit(0);
   });
-};
-
-process.on("SIGINT", () => shutdown("SIGINT"));
-process.on("SIGTERM", () => shutdown("SIGTERM"));
+});
+// ==========================================
+// END OF FILE: backend/src/server.ts
+// LOCATION: backend/src/server.ts
+// LAST UPDATED: October 19, 2026
+// ==========================================
