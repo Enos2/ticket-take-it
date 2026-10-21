@@ -1,6 +1,6 @@
 // ==========================================
 // FILE: frontend/src/pages/public/Home.tsx
-// PURPOSE: Main landing page with cinematic hero.
+// PURPOSE: Main landing page with a massive hero logo.
 // ==========================================
 import { Link } from "react-router-dom";
 import { ArrowRight } from "lucide-react";
@@ -8,7 +8,7 @@ import Events from "./Events";
 
 export default function Home() {
   return (
-    <div className="bg-dark-base min-h-screen">
+    <div className="bg-dark-base min-h-screen overflow-hidden">
       {/* Hero Section */}
       <section className="relative w-full max-w-7xl mx-auto px-6 pt-20 pb-16 flex flex-col md:flex-row items-center justify-between">
         
@@ -39,17 +39,20 @@ export default function Home() {
           </div>
         </div>
 
-        {/* Right: Glossy Logo & Hero Image */}
-        <div className="md:w-1/2 relative flex justify-center">
-          {/* Glow effect behind logo */}
-          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-80 h-80 bg-brand-red/20 blur-[100px] rounded-full"></div>
+        {/* Right: Massive Glossy Logo */}
+        <div className="md:w-1/2 relative flex justify-center items-center">
+          {/* Glow effect */}
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-150 h-150 bg-brand-red/10 blur-[150px] rounded-full pointer-events-none"></div>
           
-          <div className="relative z-10 bg-dark-surface p-8 rounded-2xl border border-dark-surface/50 shadow-2xl">
-            <img src="/logo-icon.png" alt="TTI Logo" className="w-64 h-auto object-contain drop-shadow-[0_0_30px_rgba(227,38,54,0.5)]" />
-          </div>
+          {/* Forced to 650px wide, shifted right slightly */}
+          <img 
+            src="/logo-icon.png" 
+            alt="TTI Logo" 
+            className="relative z-10 w-162.5 max-w-none object-contain drop-shadow-[0_0_50px_rgba(227,38,54,0.5)] md:-ml-12" 
+          />
 
-          {/* Decorative elements */}
-          <div className="absolute -bottom-6 -right-6 bg-dark-surface border border-brand-gold/30 p-4 rounded-xl shadow-lg">
+          {/* Decorative floating card */}
+          <div className="absolute -bottom-6 right-0 bg-dark-surface/80 backdrop-blur-md border border-brand-gold/30 p-5 rounded-xl shadow-2xl">
             <p className="text-brand-gold text-xs font-bold uppercase tracking-wider mb-1">Editor's Pick</p>
             <p className="text-text-main font-bold text-lg">Good nights.<br />Great stories.</p>
           </div>
@@ -66,5 +69,5 @@ export default function Home() {
 // ==========================================
 // END OF FILE: frontend/src/pages/public/Home.tsx
 // LOCATION: frontend/src/pages/public/Home.tsx
-// LAST UPDATED: October 20, 2026
+// LAST UPDATED: October 21, 2026
 // ==========================================
