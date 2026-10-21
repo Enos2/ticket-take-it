@@ -1,8 +1,8 @@
 <div align="center">
 
-<img src="./frontend/public/TTI-void.jpg" alt="Ticket Take It logo" width="220" />
+<img src="./frontend/public/logo-full.png" alt="Ticket Take It logo" width="220" />
 
-# Ticket Take It
+
 
 **Your World. Your Moment.**
 
