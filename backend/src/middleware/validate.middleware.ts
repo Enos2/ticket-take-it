@@ -3,25 +3,40 @@
 // PURPOSE: Zod validation middleware.
 // ==========================================
 import { Request, Response, NextFunction } from "express";
-import { AnyZodObject, ZodError } from "zod";
+import { ZodTypeAny } from "zod";
 import { ApiError } from "../utils/ApiError";
 
-export function validate(schema: AnyZodObject, target: "body" | "query" | "params" = "body") {
+type Target = "body" | "query" | "params";
+
+// Accepts any zod schema, including ones that use .refine() or .transform().
+export function validate(schema: ZodTypeAny, target: Target = "body") {
   return (req: Request, _res: Response, next: NextFunction) => {
-    try {
-      (req as any)[target] = schema.parse(req[target]);
-      next();
-    } catch (err) {
-      if (err instanceof ZodError) {
-        const msg = err.errors.map((e) => `${e.path.join(".")}: ${e.message}`).join("; ");
-        return next(ApiError.badRequest(`Validation failed — ${msg}`));
-      }
-      next(err);
+    const result = schema.safeParse(req[target]);
+
+    if (!result.success) {
+      const msg = result.error.issues
+        .map((i) => `${i.path.map(String).join(".") || "input"}: ${i.message}`)
+        .join("; ");
+      return next(ApiError.badRequest(`Validation failed - ${msg}`));
     }
+
+    if (target === "query") {
+      // Express 5 makes req.query a read-only getter, so plain assignment throws.
+      // Defining it on the request instance works on Express 4 and 5.
+      Object.defineProperty(req, "query", {
+        value: result.data,
+        writable: true,
+        configurable: true,
+        enumerable: true,
+      });
+    } else {
+      // Replaces the input with the parsed version (trimmed, lowercased, unknown keys stripped).
+      req[target] = result.data;
+    }
+
+    next();
   };
 }
 // ==========================================
 // END OF FILE: backend/src/middleware/validate.middleware.ts
-// LOCATION: backend/src/middleware/validate.middleware.ts
-// LAST UPDATED: October 19, 2026
 // ==========================================

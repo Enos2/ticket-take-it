@@ -5,17 +5,18 @@
 import { z } from "zod";
 
 export const createOrderSchema = z.object({
-  items: z.array(
-    z.object({
-      ticketTypeId: z.string(),
-      quantity: z.number().int().positive(),
-    })
-  ).min(1, "Order must contain at least one ticket"),
+  items: z
+    .array(
+      z.object({
+        ticketTypeId: z.string().min(1),
+        quantity: z.number().int().positive().max(100),
+      })
+    )
+    .min(1, "Order must contain at least one ticket")
+    .max(10, "An order can contain at most 10 ticket lines"),
 });
 
 export type CreateOrderInput = z.infer<typeof createOrderSchema>;
 // ==========================================
 // END OF FILE: backend/src/modules/orders/orders.schema.ts
-// LOCATION: backend/src/modules/orders/orders.schema.ts
-// LAST UPDATED: October 19, 2026
 // ==========================================

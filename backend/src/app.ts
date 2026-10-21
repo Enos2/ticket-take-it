@@ -14,13 +14,29 @@ import routes from "./routes/index";
 
 const app = express();
 
+// Behind Render's proxy, trust one hop so req.ip is the real client IP.
+// Rate limiting depends on this. If limits seem shared between users, check the hop count.
+if (env.NODE_ENV === "production") app.set("trust proxy", 1);
+
 app.use(helmet());
-app.use(cors({ origin: env.CORS_ORIGIN, credentials: true }));
-app.use(express.json());
+
+// CORS_ORIGIN may hold several origins, comma-separated.
+const allowedOrigins = env.CORS_ORIGIN.split(",")
+  .map((o) => o.trim())
+  .filter(Boolean);
+app.use(cors({ origin: allowedOrigins, credentials: true }));
+
+// Health check sits before logging and rate limiting so uptime pings
+// don't flood the logs or use up the request limit.
+app.get("/health", (_req, res) => res.json({ success: true, status: "API is healthy" }));
+
 app.use(pinoHttp({ logger }));
 app.use(generalLimiter);
 
-app.get("/health", (_req, res) => res.json({ success: true, status: "API is healthy" }));
+// NOTE: Stripe webhooks need the raw body. When you add them, mount
+// express.raw({ type: "application/json" }) for that route BEFORE this line.
+app.use(express.json({ limit: "100kb" }));
+
 app.use("/api/v1", routes);
 
 app.use(notFoundHandler);
@@ -29,6 +45,4 @@ app.use(errorHandler);
 export default app;
 // ==========================================
 // END OF FILE: backend/src/app.ts
-// LOCATION: backend/src/app.ts
-// LAST UPDATED: October 19, 2026
 // ==========================================

@@ -10,13 +10,15 @@ import * as controller from "./auth.controller";
 
 const router = Router();
 
+// Strict limiter: these endpoints can be brute-forced.
 router.post("/register", authLimiter, validate(registerSchema), controller.register);
 router.post("/login", authLimiter, validate(loginSchema), controller.login);
-router.post("/refresh", authLimiter, validate(refreshSchema), controller.refresh);
+
+// Refresh and logout use high-entropy tokens, so they only fall under the general API limiter.
+router.post("/refresh", validate(refreshSchema), controller.refresh);
+router.post("/logout", validate(refreshSchema), controller.logout);
 
 export default router;
 // ==========================================
 // END OF FILE: backend/src/modules/auth/auth.routes.ts
-// LOCATION: backend/src/modules/auth/auth.routes.ts
-// LAST UPDATED: October 19, 2026
 // ==========================================

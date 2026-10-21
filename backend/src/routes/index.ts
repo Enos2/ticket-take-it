@@ -24,6 +24,4 @@ router.use("/admin", adminRoutes);
 export default router;
 // ==========================================
 // END OF FILE: backend/src/routes/index.ts
-// LOCATION: backend/src/routes/index.ts
-// LAST UPDATED: October 21, 2026
 // ==========================================

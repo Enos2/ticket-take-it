@@ -12,14 +12,15 @@ import ticketRoutes from "../tickets/tickets.routes";
 const router = Router();
 
 router.get("/", controller.getAll);
-router.post("/", authenticate, authorize("SELLER", "ADMIN"), validate(createEventSchema), controller.create);
+router.post("/", authenticate, authorize("SELLER", "ADMIN"), validate(createEventSchema as any), controller.create);
 
 // Nested route: /events/:eventId/tickets
 router.use("/:eventId/tickets", ticketRoutes);
 
+// Event detail by slug: /events/:slug (single segment, so it never clashes with the nested route)
+router.get("/:slug", controller.getBySlug);
+
 export default router;
 // ==========================================
 // END OF FILE: backend/src/modules/events/events.routes.ts
-// LOCATION: backend/src/modules/events/events.routes.ts
-// LAST UPDATED: October 19, 2026
 // ==========================================

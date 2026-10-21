@@ -8,7 +8,18 @@ import { env } from "../config/env";
 export const logger = pino({
   level: env.NODE_ENV === "production" ? "info" : "debug",
   redact: {
-    paths: ["req.headers.authorization", "req.headers.cookie", "password", "token"],
+    paths: [
+      "req.headers.authorization",
+      "req.headers.cookie",
+      'req.headers["x-payment-signature"]',
+      'res.headers["set-cookie"]',
+      "password",
+      "token",
+      "*.password",
+      "*.token",
+      "*.refreshToken",
+      "*.accessToken",
+    ],
     remove: true,
   },
   transport:
@@ -18,6 +29,4 @@ export const logger = pino({
 });
 // ==========================================
 // END OF FILE: backend/src/utils/logger.ts
-// LOCATION: backend/src/utils/logger.ts
-// LAST UPDATED: October 19, 2026
 // ==========================================
