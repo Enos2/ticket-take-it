@@ -3,21 +3,10 @@
 // PURPOSE: API handlers for events.
 // ==========================================
 import { Request, Response, NextFunction } from "express";
-import { z } from "zod";
 import * as service from "./events.service";
 import { ApiError } from "../../utils/ApiError";
-import { listEventsQuerySchema, eventSlugParamSchema } from "./events.schema";
-
-function parse<T extends z.ZodTypeAny>(schema: T, input: unknown): z.infer<T> {
-  const result = schema.safeParse(input);
-  if (!result.success) {
-    const message = result.error.issues
-      .map((i) => `${i.path.join(".") || "input"}: ${i.message}`)
-      .join("; ");
-    throw ApiError.badRequest(message);
-  }
-  return result.data;
-}
+import { parse } from "../../utils/parse";
+import { listEventsQuerySchema, eventSlugParamSchema, eventIdParamSchema } from "./events.schema";
 
 export async function create(req: Request, res: Response, next: NextFunction) {
   try {
@@ -44,6 +33,61 @@ export async function getBySlug(req: Request, res: Response, next: NextFunction)
     const { slug } = parse(eventSlugParamSchema, req.params);
     const data = await service.getEventBySlug(slug);
     res.json({ success: true, data });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function update(req: Request, res: Response, next: NextFunction) {
+  try {
+    if (!req.user) throw ApiError.unauthorized();
+    const { eventId } = parse(eventIdParamSchema, req.params);
+    const data = await service.updateEvent(req.user.sub, req.user.role, eventId, req.body);
+    res.json({ success: true, data });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function publish(req: Request, res: Response, next: NextFunction) {
+  try {
+    if (!req.user) throw ApiError.unauthorized();
+    const { eventId } = parse(eventIdParamSchema, req.params);
+    const data = await service.publishEvent(req.user.sub, req.user.role, eventId);
+    res.json({ success: true, data });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function unpublish(req: Request, res: Response, next: NextFunction) {
+  try {
+    if (!req.user) throw ApiError.unauthorized();
+    const { eventId } = parse(eventIdParamSchema, req.params);
+    const data = await service.unpublishEvent(req.user.sub, req.user.role, eventId);
+    res.json({ success: true, data });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function cancel(req: Request, res: Response, next: NextFunction) {
+  try {
+    if (!req.user) throw ApiError.unauthorized();
+    const { eventId } = parse(eventIdParamSchema, req.params);
+    const data = await service.cancelEvent(req.user.sub, req.user.role, eventId);
+    res.json({ success: true, data });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function remove(req: Request, res: Response, next: NextFunction) {
+  try {
+    if (!req.user) throw ApiError.unauthorized();
+    const { eventId } = parse(eventIdParamSchema, req.params);
+    await service.deleteEvent(req.user.sub, req.user.role, eventId);
+    res.json({ success: true });
   } catch (err) {
     next(err);
   }

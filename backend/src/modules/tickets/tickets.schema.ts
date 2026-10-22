@@ -1,6 +1,6 @@
 // ==========================================
 // FILE: backend/src/modules/tickets/tickets.schema.ts
-// PURPOSE: Defines validation rules for Early Bird and Group tickets.
+// PURPOSE: Defines validation rules for creating and editing ticket types.
 // ==========================================
 import { z } from "zod";
 
@@ -11,12 +11,17 @@ export const eventIdParamSchema = z.object({
   eventId: z.string().min(1).max(64),
 });
 
+export const ticketParamsSchema = z.object({
+  eventId: z.string().min(1).max(64),
+  ticketId: z.string().min(1).max(64),
+});
+
 export const createTicketTypeSchema = z
   .object({
     name: z.string().trim().min(2).max(100),
     description: z.string().trim().max(1000).optional(),
     tier: z.enum(["EARLY_BIRD", "REGULAR", "VIP", "GROUP"]),
-    priceCents: z.number().int().positive().max(MAX_PRICE_CENTS),
+    priceCents: z.number().int().min(0).max(MAX_PRICE_CENTS), // 0 = free ticket
     currency: z.string().trim().length(3).toUpperCase().default("USD"),
     quantity: z.number().int().positive().max(MAX_QUANTITY),
 
@@ -89,7 +94,24 @@ export const createTicketTypeSchema = z
     };
   });
 
+// tier, currency and isGroup cannot change after creation. Delete and recreate instead.
+export const updateTicketTypeSchema = z
+  .object({
+    name: z.string().trim().min(2).max(100),
+    description: z.string().trim().max(1000).nullable(),
+    priceCents: z.number().int().min(0).max(MAX_PRICE_CENTS),
+    quantity: z.number().int().positive().max(MAX_QUANTITY),
+    isActive: z.boolean(),
+    startsAt: z.string().datetime({ offset: true }),
+    endsAt: z.string().datetime({ offset: true }),
+    minGroupSize: z.number().int().min(2),
+    maxGroupSize: z.number().int().min(2),
+  })
+  .partial()
+  .refine((d) => Object.keys(d).length > 0, { message: "Provide at least one field to update" });
+
 export type CreateTicketTypeInput = z.infer<typeof createTicketTypeSchema>;
+export type UpdateTicketTypeInput = z.infer<typeof updateTicketTypeSchema>;
 // ==========================================
 // END OF FILE: backend/src/modules/tickets/tickets.schema.ts
 // ==========================================

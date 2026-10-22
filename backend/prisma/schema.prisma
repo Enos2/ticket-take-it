@@ -61,20 +61,34 @@ enum PaymentStatus {
   REFUNDED
 }
 
+enum TicketStatus {
+  VALID
+  USED
+  VOID
+}
+
+enum EmailTokenType {
+  VERIFY_EMAIL
+  RESET_PASSWORD
+}
+
 model User {
-  id            String        @id @default(cuid())
-  email         String        @unique
+  id            String         @id @default(cuid())
+  email         String         @unique
   passwordHash  String
   fullName      String
   phone         String?
-  role          Role          @default(USER)
-  emailVerified Boolean       @default(false)
-  isActive      Boolean       @default(true)
-  createdAt     DateTime      @default(now())
-  updatedAt     DateTime      @updatedAt
+  role          Role           @default(USER)
+  emailVerified Boolean        @default(false)
+  isActive      Boolean        @default(true)
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
   sellerProfile SellerProfile?
   orders        Order[]
+  tickets       Ticket[]
   refreshTokens RefreshToken[]
+  emailTokens   EmailToken[]
+
   @@index([email])
 }
 
@@ -86,7 +100,21 @@ model RefreshToken {
   expiresAt DateTime
   revokedAt DateTime?
   createdAt DateTime  @default(now())
+
   @@index([userId])
+}
+
+model EmailToken {
+  id        String         @id @default(cuid())
+  tokenHash String         @unique
+  type      EmailTokenType
+  userId    String
+  user      User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime       @default(now())
+
+  @@index([userId, type])
 }
 
 model SellerProfile {
@@ -102,7 +130,7 @@ model SellerProfile {
   approvedAt    DateTime?
   createdAt     DateTime     @default(now())
   updatedAt     DateTime     @updatedAt
-  events Event[]
+  events        Event[]
 }
 
 model Event {
@@ -122,30 +150,34 @@ model Event {
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @updatedAt
   ticketTypes TicketType[]
+  tickets     Ticket[]
+
   @@index([sellerId])
   @@index([status, startsAt])
 }
 
 model TicketType {
-  id           String     @id @default(cuid())
+  id           String       @id @default(cuid())
   eventId      String
-  event        Event      @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  event        Event        @relation(fields: [eventId], references: [id], onDelete: Cascade)
   name         String
   description  String?
-  tier         TicketTier @default(REGULAR)
+  tier         TicketTier   @default(REGULAR)
   priceCents   Int
-  currency     String     @default("USD")
+  currency     String       @default("USD")
   quantity     Int
-  sold         Int        @default(0)
+  sold         Int          @default(0)
   startsAt     DateTime?
   endsAt       DateTime?
-  isGroup      Boolean    @default(false)
+  isGroup      Boolean      @default(false)
   minGroupSize Int?
   maxGroupSize Int?
-  isActive     Boolean    @default(true)
-  createdAt    DateTime   @default(now())
-  updatedAt    DateTime   @updatedAt
+  isActive     Boolean      @default(true)
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
   orderItems   OrderItem[]
+  tickets      Ticket[]
+
   @@index([eventId, tier])
 }
 
@@ -159,12 +191,16 @@ model Order {
   currency             String      @default("USD")
   reservationExpiresAt DateTime?
   paidAt               DateTime?
+  refundedAt           DateTime?
   createdAt            DateTime    @default(now())
   updatedAt            DateTime    @updatedAt
-  items    OrderItem[]
-  payments Payment[]
+  items                OrderItem[]
+  payments             Payment[]
+  tickets              Ticket[]
+
   @@index([userId])
   @@index([status])
+  @@index([status, reservationExpiresAt])
 }
 
 model OrderItem {
@@ -176,8 +212,34 @@ model OrderItem {
   quantity       Int
   unitPriceCents Int
   subtotalCents  Int
+  tickets        Ticket[]
+
   @@index([orderId])
   @@index([ticketTypeId])
+}
+
+// One row per admitted person. `code` is a random secret that goes in the QR.
+model Ticket {
+  id            String       @id @default(cuid())
+  code          String       @unique
+  orderId       String
+  order         Order        @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  orderItemId   String
+  orderItem     OrderItem    @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
+  ticketTypeId  String
+  ticketType    TicketType   @relation(fields: [ticketTypeId], references: [id])
+  eventId       String
+  event         Event        @relation(fields: [eventId], references: [id])
+  userId        String
+  user          User         @relation(fields: [userId], references: [id])
+  status        TicketStatus @default(VALID)
+  usedAt        DateTime?
+  checkedInById String?
+  createdAt     DateTime     @default(now())
+
+  @@index([orderId])
+  @@index([userId])
+  @@index([eventId, status])
 }
 
 model Payment {
@@ -192,11 +254,11 @@ model Payment {
   metadata    Json?
   createdAt   DateTime        @default(now())
   updatedAt   DateTime        @updatedAt
+
+  @@unique([provider, providerRef, status])
   @@index([orderId])
   @@index([providerRef])
 }
 // ==========================================
 // END OF FILE: backend/prisma/schema.prisma
-// LOCATION: backend/prisma/schema.prisma
-// LAST UPDATED: October 19, 2026
 // ==========================================

@@ -1,11 +1,18 @@
 // ==========================================
 // FILE: backend/src/modules/sellers/sellers.service.ts
-// PURPOSE: Seller logic for onboarding and viewing orders.
+// PURPOSE: Seller logic: onboarding, orders, events dashboard and attendees.
 // ==========================================
 import { Prisma, Role } from "@prisma/client";
 import { prisma } from "../../config/database";
 import { ApiError } from "../../utils/ApiError";
-import { OnboardSellerInput, SellerOrdersQuery } from "./sellers.schema";
+import { skipTake } from "../../utils/pagination";
+import { getManagedEvent } from "../events/event.access";
+import {
+  OnboardSellerInput,
+  SellerOrdersQuery,
+  SellerEventsQuery,
+  AttendeesQuery,
+} from "./sellers.schema";
 
 export async function onboardSeller(userId: string, input: OnboardSellerInput) {
   const existing = await prisma.sellerProfile.findUnique({ where: { userId } });
@@ -80,13 +87,115 @@ export async function getSellerOrders(userId: string, role: Role, query: SellerO
         },
       },
       orderBy: { order: { createdAt: "desc" } },
-      take: limit,
-      skip: (page - 1) * limit,
+      ...skipTake(query),
     }),
     prisma.orderItem.count({ where }),
   ]);
 
   return { items, total, page, limit };
+}
+
+// All of the seller's own events, drafts included, with ticket stock.
+export async function getSellerEvents(userId: string, query: SellerEventsQuery) {
+  const seller = await prisma.sellerProfile.findUnique({ where: { userId }, select: { id: true } });
+  if (!seller) throw ApiError.forbidden("Seller profile not found");
+
+  const where: Prisma.EventWhereInput = {
+    sellerId: seller.id,
+    ...(query.status && { status: query.status }),
+  };
+
+  const [items, total] = await prisma.$transaction([
+    prisma.event.findMany({
+      where,
+      include: {
+        ticketTypes: {
+          select: { id: true, name: true, tier: true, priceCents: true, currency: true, quantity: true, sold: true, isActive: true },
+          orderBy: { priceCents: "asc" },
+        },
+      },
+      orderBy: { startsAt: "desc" },
+      ...skipTake(query),
+    }),
+    prisma.event.count({ where }),
+  ]);
+
+  return { items, total, page: query.page, limit: query.limit };
+}
+
+// Sales and door numbers for one event.
+export async function getEventSummary(userId: string, role: Role, eventId: string) {
+  const event = await getManagedEvent(userId, role, eventId);
+
+  const [ticketTypes, revenue, issued, checkedIn] = await Promise.all([
+    prisma.ticketType.findMany({
+      where: { eventId },
+      orderBy: { priceCents: "asc" },
+      select: { id: true, name: true, tier: true, priceCents: true, currency: true, quantity: true, sold: true, isActive: true },
+    }),
+    prisma.orderItem.groupBy({
+      by: ["ticketTypeId"],
+      where: { ticketType: { eventId }, order: { status: "PAID" } },
+      _sum: { subtotalCents: true, quantity: true },
+    }),
+    prisma.ticket.count({ where: { eventId, status: { not: "VOID" } } }),
+    prisma.ticket.count({ where: { eventId, status: "USED" } }),
+  ]);
+
+  const paidByType = new Map(revenue.map((r) => [r.ticketTypeId, r._sum]));
+
+  const types = ticketTypes.map((t) => ({
+    ...t,
+    available: Math.max(t.quantity - t.sold, 0), // sold includes unpaid holds
+    paidQuantity: paidByType.get(t.id)?.quantity ?? 0,
+    revenueCents: paidByType.get(t.id)?.subtotalCents ?? 0,
+  }));
+
+  return {
+    event: {
+      id: event.id,
+      title: event.title,
+      slug: event.slug,
+      status: event.status,
+      startsAt: event.startsAt,
+      endsAt: event.endsAt,
+    },
+    ticketTypes: types,
+    totals: {
+      ticketsIssued: issued,
+      checkedIn,
+      notYetArrived: Math.max(issued - checkedIn, 0),
+      revenueCents: types.reduce((sum, t) => sum + t.revenueCents, 0),
+      currency: types[0]?.currency ?? null,
+    },
+  };
+}
+
+// Attendee list. Ticket codes are deliberately NOT included.
+export async function getEventAttendees(userId: string, role: Role, eventId: string, query: AttendeesQuery) {
+  await getManagedEvent(userId, role, eventId);
+
+  const where: Prisma.TicketWhereInput = { eventId, ...(query.status && { status: query.status }) };
+
+  const [items, total] = await prisma.$transaction([
+    prisma.ticket.findMany({
+      where,
+      select: {
+        id: true,
+        status: true,
+        usedAt: true,
+        createdAt: true,
+        ticketType: { select: { name: true } },
+        user: { select: { fullName: true, email: true } },
+        order: { select: { reference: true } },
+      },
+      orderBy: { createdAt: "asc" },
+      ...skipTake(query),
+    }),
+    prisma.ticket.count({ where }),
+  ]);
+
+  return { items, total, page: query.page, limit: query.limit };
 }
 // ==========================================
 // END OF FILE: backend/src/modules/sellers/sellers.service.ts

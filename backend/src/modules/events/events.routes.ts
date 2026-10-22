@@ -5,20 +5,30 @@
 import { Router } from "express";
 import { authenticate, authorize } from "../../middleware/auth.middleware";
 import { validate } from "../../middleware/validate.middleware";
-import { createEventSchema } from "./events.schema";
+import { createEventSchema, updateEventSchema } from "./events.schema";
 import * as controller from "./events.controller";
 import ticketRoutes from "../tickets/tickets.routes";
 
 const router = Router();
 
+const manage = [authenticate, authorize("SELLER", "ADMIN")];
+
+// Public
 router.get("/", controller.getAll);
-router.post("/", authenticate, authorize("SELLER", "ADMIN"), validate(createEventSchema as any), controller.create);
 
 // Nested route: /events/:eventId/tickets
 router.use("/:eventId/tickets", ticketRoutes);
 
-// Event detail by slug: /events/:slug (single segment, so it never clashes with the nested route)
+// Event detail by slug: /events/:slug
 router.get("/:slug", controller.getBySlug);
+
+// Seller / admin management
+router.post("/", ...manage, validate(createEventSchema), controller.create);
+router.patch("/:eventId", ...manage, validate(updateEventSchema), controller.update);
+router.post("/:eventId/publish", ...manage, controller.publish);
+router.post("/:eventId/unpublish", ...manage, controller.unpublish);
+router.post("/:eventId/cancel", ...manage, controller.cancel);
+router.delete("/:eventId", ...manage, controller.remove);
 
 export default router;
 // ==========================================

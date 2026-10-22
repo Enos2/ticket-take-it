@@ -2,10 +2,13 @@
 // FILE: backend/src/modules/payments/payments.service.ts
 // PURPOSE: Handles payment initialization and webhooks.
 // ==========================================
-import { Prisma } from "@prisma/client";
+import { Prisma, PaymentStatus } from "@prisma/client";
 import { prisma } from "../../config/database";
 import { ApiError } from "../../utils/ApiError";
 import { logger } from "../../utils/logger";
+import { issueTicketsForOrder } from "../orders/fulfillment.service";
+import { background } from "../../utils/background";
+import { notifyOrderPaid } from "../notifications/notifications.service";
 
 export interface WebhookInput {
   reference: string;
@@ -18,14 +21,15 @@ export interface WebhookInput {
 
 export type WebhookResult = "processed" | "duplicate" | "needs_refund" | "failed_recorded";
 
-// Internal signals used to steer the transaction logic.
 class StockUnavailableError extends Error {}
 class StatusChangedError extends Error {}
+
+const isUniqueViolation = (err: unknown) =>
+  err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002";
 
 export async function initializePayment(orderId: string, userId: string) {
   const order = await prisma.order.findUnique({ where: { id: orderId } });
 
-  // Same message for "missing" and "not yours" so order ids can't be probed.
   if (!order || order.userId !== userId) throw ApiError.notFound("Order not found");
   if (order.status === "PAID") throw ApiError.badRequest("Order is already paid");
   if (order.status !== "PENDING" && order.status !== "RESERVED") {
@@ -35,8 +39,6 @@ export async function initializePayment(orderId: string, userId: string) {
     throw ApiError.badRequest("Your reservation has expired. Please create a new order.");
   }
 
-  // In a real app, this is where you call Stripe or M-Pesa.
-  // For now, we return a mock payment intent.
   return {
     clientSecret: `mock_secret_${order.reference}`,
     amount: order.totalCents,
@@ -45,27 +47,30 @@ export async function initializePayment(orderId: string, userId: string) {
   };
 }
 
-function recordPayment(
+async function recordPayment(
   orderId: string,
   input: WebhookInput,
   status: "SUCCEEDED" | "FAILED",
   metadata?: Prisma.InputJsonValue
 ) {
-  return prisma.payment.create({
-    data: {
-      orderId,
-      provider: input.provider,
-      providerRef: input.providerRef,
-      status,
-      amountCents: input.amountCents,
-      currency: input.currency.toUpperCase(),
-      metadata,
-    },
-  });
+  try {
+    await prisma.payment.create({
+      data: {
+        orderId,
+        provider: input.provider,
+        providerRef: input.providerRef,
+        status,
+        amountCents: input.amountCents,
+        currency: input.currency.toUpperCase(),
+        metadata,
+      },
+    });
+  } catch (err) {
+    if (!isUniqueViolation(err)) throw err;
+  }
 }
 
 export async function handleWebhook(input: WebhookInput): Promise<WebhookResult> {
-  // A concurrent status change (e.g. the expiry job) can invalidate one attempt; retry a few times.
   for (let attempt = 0; attempt < 3; attempt++) {
     const result = await processWebhook(input);
     if (result !== "retry") return result;
@@ -74,9 +79,9 @@ export async function handleWebhook(input: WebhookInput): Promise<WebhookResult>
 }
 
 async function processWebhook(input: WebhookInput): Promise<WebhookResult | "retry"> {
-  // Idempotency: same provider event already recorded -> do nothing.
+  const seenStatuses: PaymentStatus[] = input.status === "SUCCEEDED" ? ["SUCCEEDED", "REFUNDED"] : ["FAILED"];
   const seen = await prisma.payment.findFirst({
-    where: { provider: input.provider, providerRef: input.providerRef, status: input.status },
+    where: { provider: input.provider, providerRef: input.providerRef, status: { in: seenStatuses } },
     select: { id: true },
   });
   if (seen) return "duplicate";
@@ -87,14 +92,11 @@ async function processWebhook(input: WebhookInput): Promise<WebhookResult | "ret
   });
   if (!order) throw ApiError.notFound("Order not found");
 
-  // ---------- FAILED ----------
   if (input.status === "FAILED") {
-    // Keep the order open so the buyer can retry until the hold expires.
     await recordPayment(order.id, input, "FAILED");
     return "failed_recorded";
   }
 
-  // ---------- SUCCEEDED ----------
   if (
     input.amountCents !== order.totalCents ||
     input.currency.toUpperCase() !== order.currency.toUpperCase()
@@ -105,7 +107,6 @@ async function processWebhook(input: WebhookInput): Promise<WebhookResult | "ret
     throw ApiError.badRequest("Payment amount or currency does not match the order");
   }
 
-  // Money arrived for an order that is already settled -> double charge, flag it.
   if (order.status === "PAID" || order.status === "REFUNDED") {
     await recordPayment(order.id, input, "SUCCEEDED", {
       needsRefund: true,
@@ -115,12 +116,11 @@ async function processWebhook(input: WebhookInput): Promise<WebhookResult | "ret
     return "needs_refund";
   }
 
-  const fromStatus = order.status; // exact status we read; the transition below is guarded on it
+  const fromStatus = order.status; 
   const wasReleased = fromStatus === "CANCELLED" || fromStatus === "EXPIRED";
 
   try {
     await prisma.$transaction(async (tx) => {
-      // If the hold was released, the stock may have been resold. Re-claim it atomically.
       if (wasReleased) {
         const sorted = [...order.items].sort((a, b) => (a.ticketTypeId < b.ticketTypeId ? -1 : 1));
         for (const it of sorted) {
@@ -135,7 +135,6 @@ async function processWebhook(input: WebhookInput): Promise<WebhookResult | "ret
         }
       }
 
-      // Guarded transition: only succeeds if the status is still what we read.
       const moved = await tx.order.updateMany({
         where: { id: order.id, status: fromStatus },
         data: { status: "PAID", paidAt: new Date() },
@@ -152,14 +151,18 @@ async function processWebhook(input: WebhookInput): Promise<WebhookResult | "ret
           currency: input.currency.toUpperCase(),
         },
       });
+
+      await issueTicketsForOrder(tx, order.id);
     });
 
+    background(notifyOrderPaid(order.id), "order confirmation email");
     return "processed";
   } catch (err) {
     if (err instanceof StatusChangedError) return "retry";
 
+    if (isUniqueViolation(err)) return "duplicate";
+
     if (err instanceof StockUnavailableError) {
-      // Customer paid but the tickets are gone. Keep the money trail and flag for refund.
       await recordPayment(order.id, input, "SUCCEEDED", {
         needsRefund: true,
         reason: "stock_unavailable_after_expiry",
@@ -173,4 +176,6 @@ async function processWebhook(input: WebhookInput): Promise<WebhookResult | "ret
 }
 // ==========================================
 // END OF FILE: backend/src/modules/payments/payments.service.ts
+// LOCATION: backend/src/modules/payments/payments.service.ts
+// LAST UPDATED: October 22, 2026
 // ==========================================

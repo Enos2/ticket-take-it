@@ -1,11 +1,18 @@
 // ==========================================
 // FILE: backend/src/modules/tickets/tickets.service.ts
-// PURPOSE: Logic for adding tickets to an event.
+// PURPOSE: Logic for adding, editing and removing ticket types.
 // ==========================================
 import { Role } from "@prisma/client";
 import { prisma } from "../../config/database";
 import { ApiError } from "../../utils/ApiError";
-import { CreateTicketTypeInput } from "./tickets.schema";
+import { getManagedEvent } from "../events/event.access";
+import { CreateTicketTypeInput, UpdateTicketTypeInput } from "./tickets.schema";
+
+function assertEventEditable(event: { status: string; endsAt: Date }) {
+  if (event.status === "CANCELLED" || event.status === "COMPLETED" || event.endsAt < new Date()) {
+    throw ApiError.badRequest("Tickets cannot be changed on an event that has ended or been cancelled");
+  }
+}
 
 export async function createTicketType(
   userId: string,
@@ -13,23 +20,8 @@ export async function createTicketType(
   eventId: string,
   input: CreateTicketTypeInput
 ) {
-  const event = await prisma.event.findUnique({
-    where: { id: eventId },
-    include: { seller: true },
-  });
-  if (!event) throw ApiError.notFound("Event not found");
-
-  // Admins may manage any event. Sellers need to own it AND be approved.
-  if (role !== "ADMIN") {
-    if (event.seller.userId !== userId) throw ApiError.forbidden("You do not own this event");
-    if (event.seller.status !== "APPROVED") {
-      throw ApiError.forbidden("Your seller account has not been approved yet");
-    }
-  }
-
-  if (event.status === "CANCELLED" || event.status === "COMPLETED" || event.endsAt < new Date()) {
-    throw ApiError.badRequest("Tickets cannot be added to an event that has ended or been cancelled");
-  }
+  const event = await getManagedEvent(userId, role, eventId);
+  assertEventEditable(event);
 
   if (input.endsAt && new Date(input.endsAt) > event.endsAt) {
     throw ApiError.badRequest("The early bird window must end before the event ends");
@@ -60,6 +52,79 @@ export async function createTicketType(
       endsAt: input.endsAt ? new Date(input.endsAt) : null,
     },
   });
+}
+
+export async function updateTicketType(
+  userId: string,
+  role: Role,
+  eventId: string,
+  ticketId: string,
+  input: UpdateTicketTypeInput
+) {
+  const event = await getManagedEvent(userId, role, eventId);
+  assertEventEditable(event);
+
+  const ticket = await prisma.ticketType.findFirst({ where: { id: ticketId, eventId } });
+  if (!ticket) throw ApiError.notFound("Ticket type not found");
+
+  const quantity = input.quantity ?? ticket.quantity;
+  if (quantity < ticket.sold) {
+    throw ApiError.badRequest(`Quantity cannot go below the ${ticket.sold} already sold or reserved`);
+  }
+
+  // Group limits
+  if (ticket.isGroup) {
+    const min = input.minGroupSize ?? ticket.minGroupSize;
+    const max = input.maxGroupSize ?? ticket.maxGroupSize;
+    if (!min || !max || max < min) throw ApiError.badRequest("maxGroupSize must be at least minGroupSize");
+    if (max > quantity) throw ApiError.badRequest("maxGroupSize cannot exceed the ticket quantity");
+  } else if (input.minGroupSize !== undefined || input.maxGroupSize !== undefined) {
+    throw ApiError.badRequest("Group sizes only apply to group tickets");
+  }
+
+  // Early bird window
+  if (ticket.tier === "EARLY_BIRD") {
+    const startsAt = input.startsAt ? new Date(input.startsAt) : ticket.startsAt;
+    const endsAt = input.endsAt ? new Date(input.endsAt) : ticket.endsAt;
+    if (!startsAt || !endsAt || endsAt <= startsAt) throw ApiError.badRequest("endsAt must be after startsAt");
+    if (endsAt > event.endsAt) throw ApiError.badRequest("The early bird window must end before the event ends");
+  } else if (input.startsAt !== undefined || input.endsAt !== undefined) {
+    throw ApiError.badRequest("Date windows only apply to early bird tickets");
+  }
+
+  // The `sold <= quantity` guard stops a concurrent purchase from slipping under the new limit.
+  const updated = await prisma.ticketType.updateMany({
+    where: { id: ticketId, eventId, sold: { lte: quantity } },
+    data: {
+      name: input.name,
+      description: input.description,
+      priceCents: input.priceCents,
+      quantity: input.quantity,
+      isActive: input.isActive,
+      minGroupSize: input.minGroupSize,
+      maxGroupSize: input.maxGroupSize,
+      startsAt: input.startsAt ? new Date(input.startsAt) : undefined,
+      endsAt: input.endsAt ? new Date(input.endsAt) : undefined,
+    },
+  });
+  if (updated.count === 0) throw ApiError.conflict("Tickets were just sold. Please refresh and try again.");
+
+  return await prisma.ticketType.findUniqueOrThrow({ where: { id: ticketId } });
+}
+
+// Only never-ordered ticket types can be deleted. Otherwise deactivate with PATCH { isActive: false }.
+export async function deleteTicketType(userId: string, role: Role, eventId: string, ticketId: string) {
+  await getManagedEvent(userId, role, eventId);
+
+  const ticket = await prisma.ticketType.findFirst({ where: { id: ticketId, eventId }, select: { id: true } });
+  if (!ticket) throw ApiError.notFound("Ticket type not found");
+
+  const ordered = await prisma.orderItem.count({ where: { ticketTypeId: ticketId } });
+  if (ordered > 0) {
+    throw ApiError.conflict("This ticket type has been ordered. Deactivate it instead (set isActive to false).");
+  }
+
+  await prisma.ticketType.delete({ where: { id: ticketId } });
 }
 
 export async function getTicketsForEvent(eventId: string) {

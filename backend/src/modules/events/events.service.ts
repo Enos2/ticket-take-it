@@ -1,14 +1,17 @@
 // ==========================================
 // FILE: backend/src/modules/events/events.service.ts
-// PURPOSE: Business logic for creating and fetching events.
+// PURPOSE: Business logic for creating, managing and fetching events.
 // ==========================================
 import { randomBytes } from "crypto";
-import { Prisma } from "@prisma/client";
+import { Prisma, Role } from "@prisma/client";
 import { prisma } from "../../config/database";
 import { ApiError } from "../../utils/ApiError";
-import { CreateEventInput, ListEventsQuery } from "./events.schema";
+import { releaseStock } from "../orders/orders.service";
+import { getManagedEvent } from "./event.access";
+import { CreateEventInput, UpdateEventInput, ListEventsQuery } from "./events.schema";
+import { background } from "../../utils/background";
+import { notifyEventCancelled } from "../notifications/notifications.service";
 
-// URL-friendly slug with a random suffix to avoid collisions.
 function generateSlug(title: string): string {
   const base =
     title
@@ -25,7 +28,6 @@ function generateSlug(title: string): string {
 
 const MAX_SLUG_ATTEMPTS = 3;
 
-// Only tickets that are on sale, cheapest first.
 const activeTickets = {
   where: { isActive: true },
   orderBy: { priceCents: "asc" },
@@ -51,7 +53,8 @@ export async function createEvent(userId: string, input: CreateEventInput) {
           country: input.country,
           startsAt: new Date(input.startsAt),
           endsAt: new Date(input.endsAt),
-          status: "PUBLISHED", // Auto-publish for testing. Add a draft/publish step before launch.
+          bannerUrl: input.bannerUrl,
+          status: "DRAFT",
         },
       });
     } catch (err) {
@@ -61,20 +64,19 @@ export async function createEvent(userId: string, input: CreateEventInput) {
     }
   }
 
-  // Unreachable, keeps TypeScript satisfied.
   throw ApiError.badRequest("Could not create event");
 }
 
 export async function getAllEvents({ page, limit }: ListEventsQuery) {
   const where: Prisma.EventWhereInput = {
     status: "PUBLISHED",
-    endsAt: { gte: new Date() }, // hide events that have already ended
+    endsAt: { gte: new Date() },
   };
 
   const [items, total] = await prisma.$transaction([
     prisma.event.findMany({
       where,
-      include: { ticketTypes: activeTickets }, // so users can see prices
+      include: { ticketTypes: activeTickets },
       orderBy: { startsAt: "asc" },
       take: limit,
       skip: (page - 1) * limit,
@@ -93,6 +95,136 @@ export async function getEventBySlug(slug: string) {
   if (!event) throw ApiError.notFound("Event not found");
   return event;
 }
+
+export async function updateEvent(userId: string, role: Role, eventId: string, input: UpdateEventInput) {
+  const event = await getManagedEvent(userId, role, eventId);
+  if (event.status === "CANCELLED" || event.status === "COMPLETED") {
+    throw ApiError.badRequest("This event can no longer be edited");
+  }
+
+  const now = new Date();
+  const startsAt = input.startsAt ? new Date(input.startsAt) : event.startsAt;
+  const endsAt = input.endsAt ? new Date(input.endsAt) : event.endsAt;
+
+  if (input.startsAt && startsAt <= now) throw ApiError.badRequest("startsAt must be in the future");
+  if (endsAt <= startsAt) throw ApiError.badRequest("endsAt must be after startsAt");
+
+  if (input.endsAt) {
+    const tooLate = await prisma.ticketType.count({
+      where: { eventId, tier: "EARLY_BIRD", endsAt: { gt: endsAt } },
+    });
+    if (tooLate > 0) {
+      throw ApiError.badRequest("An early bird window ends after the new event end time. Edit those ticket types first.");
+    }
+  }
+
+  return await prisma.event.update({
+    where: { id: eventId },
+    data: {
+      title: input.title,
+      description: input.description,
+      venue: input.venue,
+      city: input.city,
+      country: input.country,
+      startsAt: input.startsAt ? startsAt : undefined,
+      endsAt: input.endsAt ? endsAt : undefined,
+      bannerUrl: input.bannerUrl,
+    },
+  });
+}
+
+export async function publishEvent(userId: string, role: Role, eventId: string) {
+  const event = await getManagedEvent(userId, role, eventId);
+  if (event.status === "PUBLISHED") return event;
+  if (event.status !== "DRAFT") throw ApiError.badRequest(`Cannot publish an event that is ${event.status.toLowerCase()}`);
+  if (event.endsAt < new Date()) throw ApiError.badRequest("This event has already ended");
+
+  const activeTypes = await prisma.ticketType.count({ where: { eventId, isActive: true } });
+  if (activeTypes === 0) throw ApiError.badRequest("Add at least one active ticket type before publishing");
+
+  const flipped = await prisma.event.updateMany({
+    where: { id: eventId, status: "DRAFT" },
+    data: { status: "PUBLISHED" },
+  });
+  if (flipped.count === 0) throw ApiError.conflict("The event changed while publishing. Please refresh.");
+
+  return await prisma.event.findUniqueOrThrow({ where: { id: eventId } });
+}
+
+export async function unpublishEvent(userId: string, role: Role, eventId: string) {
+  const event = await getManagedEvent(userId, role, eventId);
+  if (event.status === "DRAFT") return event;
+  if (event.status !== "PUBLISHED") throw ApiError.badRequest(`Cannot unpublish an event that is ${event.status.toLowerCase()}`);
+
+  const issued = await prisma.ticket.count({ where: { eventId, status: { not: "VOID" } } });
+  if (issued > 0) throw ApiError.conflict("This event already has ticket sales. Cancel it instead of unpublishing.");
+
+  const flipped = await prisma.event.updateMany({
+    where: { id: eventId, status: "PUBLISHED" },
+    data: { status: "DRAFT" },
+  });
+  if (flipped.count === 0) throw ApiError.conflict("The event changed while unpublishing. Please refresh.");
+
+  return await prisma.event.findUniqueOrThrow({ where: { id: eventId } });
+}
+
+export async function cancelEvent(userId: string, role: Role, eventId: string) {
+  const event = await getManagedEvent(userId, role, eventId);
+  if (event.status === "COMPLETED") throw ApiError.badRequest("A completed event cannot be cancelled");
+
+  const newlyCancelled = event.status !== "CANCELLED";
+
+  if (newlyCancelled) {
+    await prisma.$transaction(async (tx) => {
+      const flipped = await tx.event.updateMany({
+        where: { id: eventId, status: { in: ["DRAFT", "PUBLISHED", "SOLD_OUT"] } },
+        data: { status: "CANCELLED" },
+      });
+      if (flipped.count === 0) throw ApiError.conflict("The event changed while cancelling. Please refresh.");
+
+      await tx.ticketType.updateMany({ where: { eventId }, data: { isActive: false } });
+      await tx.ticket.updateMany({ where: { eventId, status: "VALID" }, data: { status: "VOID" } });
+
+      const unpaid = await tx.order.findMany({
+        where: {
+          status: { in: ["PENDING", "RESERVED"] },
+          items: { some: { ticketType: { eventId } } },
+        },
+        include: { items: true },
+      });
+
+      for (const order of unpaid) {
+        const flippedOrder = await tx.order.updateMany({
+          where: { id: order.id, status: { in: ["PENDING", "RESERVED"] } },
+          data: { status: "CANCELLED" },
+        });
+        if (flippedOrder.count > 0) await releaseStock(tx, order.items);
+      }
+    });
+  }
+
+  if (newlyCancelled) background(notifyEventCancelled(eventId), "event cancelled emails");
+
+  const [updated, paidOrdersToRefund] = await Promise.all([
+    prisma.event.findUniqueOrThrow({ where: { id: eventId } }),
+    prisma.order.count({
+      where: { status: "PAID", items: { some: { ticketType: { eventId } } } },
+    }),
+  ]);
+
+  return { event: updated, paidOrdersToRefund };
+}
+
+export async function deleteEvent(userId: string, role: Role, eventId: string) {
+  await getManagedEvent(userId, role, eventId);
+
+  const ordered = await prisma.orderItem.count({ where: { ticketType: { eventId } } });
+  if (ordered > 0) throw ApiError.conflict("This event has orders. Cancel it instead of deleting it.");
+
+  await prisma.event.delete({ where: { id: eventId } });
+}
 // ==========================================
 // END OF FILE: backend/src/modules/events/events.service.ts
+// LOCATION: backend/src/modules/events/events.service.ts
+// LAST UPDATED: October 22, 2026
 // ==========================================

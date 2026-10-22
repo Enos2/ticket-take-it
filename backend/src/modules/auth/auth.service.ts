@@ -1,14 +1,18 @@
 // ==========================================
 // FILE: backend/src/modules/auth/auth.service.ts
-// PURPOSE: Core login/register logic.
+// PURPOSE: Core login/register logic, email verification and password flows.
 // ==========================================
 import { createHash, randomBytes } from "crypto";
 import { Prisma, Role } from "@prisma/client";
 import { prisma } from "../../config/database";
 import { env } from "../../config/env";
 import { ApiError } from "../../utils/ApiError";
-import { hashPassword, verifyPasswordTimingSafe } from "../../utils/password";
+import { background } from "../../utils/background";
+import { sendEmail } from "../../utils/email";
+import { appLink, verifyEmailEmail, resetPasswordEmail } from "../../utils/emailTemplates";
+import { hashPassword, verifyPassword, verifyPasswordTimingSafe } from "../../utils/password";
 import { signAccessToken } from "../../utils/jwt";
+import { createEmailToken, consumeEmailToken } from "./emailToken.service";
 import type { RegisterInput, LoginInput } from "./auth.schema";
 
 interface TokenUser {
@@ -22,8 +26,14 @@ const normalizeEmail = (email: string) => email.trim().toLowerCase();
 // Refresh tokens are stored hashed. The raw token is only ever sent to the client.
 const hashToken = (token: string) => createHash("sha256").update(token).digest("hex");
 
-function publicUser(user: { id: string; email: string; fullName: string; role: Role }) {
-  return { id: user.id, email: user.email, fullName: user.fullName, role: user.role };
+function publicUser(user: { id: string; email: string; fullName: string; role: Role; emailVerified: boolean }) {
+  return {
+    id: user.id,
+    email: user.email,
+    fullName: user.fullName,
+    role: user.role,
+    emailVerified: user.emailVerified,
+  };
 }
 
 async function issueTokens(user: TokenUser, db: Prisma.TransactionClient = prisma) {
@@ -40,6 +50,34 @@ async function issueTokens(user: TokenUser, db: Prisma.TransactionClient = prism
 
   return { accessToken, refreshToken };
 }
+
+// ------------------------------------------------------------------ emails
+
+interface MailUser {
+  id: string;
+  email: string;
+  fullName: string;
+}
+
+async function deliverVerification(user: MailUser, token: string) {
+  const url = appLink(`/verify-email?token=${encodeURIComponent(token)}`);
+  await sendEmail({ to: user.email, ...verifyEmailEmail(user.fullName, url) });
+}
+
+async function sendVerificationEmail(user: MailUser) {
+  const token = await createEmailToken(user.id, "VERIFY_EMAIL");
+  if (token) await deliverVerification(user, token); // null = one was sent in the last minute
+}
+
+async function sendPasswordResetEmail(user: MailUser) {
+  const token = await createEmailToken(user.id, "RESET_PASSWORD");
+  if (!token) return;
+
+  const url = appLink(`/reset-password?token=${encodeURIComponent(token)}`);
+  await sendEmail({ to: user.email, ...resetPasswordEmail(user.fullName, url) });
+}
+
+// ---------------------------------------------------------------- accounts
 
 export async function register(input: RegisterInput) {
   const email = normalizeEmail(input.email);
@@ -66,6 +104,7 @@ export async function register(input: RegisterInput) {
   }
 
   const tokens = await issueTokens(user);
+  background(sendVerificationEmail(user), "verification email");
   return { user: publicUser(user), ...tokens };
 }
 
@@ -122,12 +161,88 @@ export async function logout(refreshToken: string) {
   });
 }
 
+// ---------------------------------------------------- verification and reset
+
+export async function verifyEmail(rawToken: string) {
+  await prisma.$transaction(async (tx) => {
+    const userId = await consumeEmailToken(tx, rawToken, "VERIFY_EMAIL");
+    await tx.user.update({ where: { id: userId }, data: { emailVerified: true } });
+  });
+}
+
+export async function resendVerification(userId: string) {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { id: true, email: true, fullName: true, emailVerified: true, isActive: true },
+  });
+  if (!user || !user.isActive) throw ApiError.unauthorized("Account not found or disabled");
+  if (user.emailVerified) throw ApiError.badRequest("Your email is already verified");
+
+  const token = await createEmailToken(user.id, "VERIFY_EMAIL");
+  if (!token) throw ApiError.tooManyRequests("Please wait a minute before requesting another email");
+
+  await deliverVerification(user, token);
+}
+
+// Always returns without saying whether the email exists, so it can't be used to find registered accounts.
+export async function forgotPassword(rawEmail: string) {
+  const user = await prisma.user.findUnique({ where: { email: normalizeEmail(rawEmail) } });
+  if (!user || !user.isActive) return;
+
+  background(sendPasswordResetEmail(user), "password reset email");
+}
+
+export async function resetPassword(rawToken: string, newPassword: string) {
+  const passwordHash = await hashPassword(newPassword);
+
+  await prisma.$transaction(async (tx) => {
+    const userId = await consumeEmailToken(tx, rawToken, "RESET_PASSWORD");
+
+    const user = await tx.user.findUnique({ where: { id: userId }, select: { isActive: true } });
+    if (!user?.isActive) throw ApiError.badRequest("This link is invalid or has expired");
+
+    const now = new Date();
+    await tx.user.update({ where: { id: userId }, data: { passwordHash } });
+
+    // Everyone signed in with the old password is signed out, and any other reset links die.
+    await tx.refreshToken.updateMany({ where: { userId, revokedAt: null }, data: { revokedAt: now } });
+    await tx.emailToken.updateMany({
+      where: { userId, type: "RESET_PASSWORD", usedAt: null },
+      data: { usedAt: now },
+    });
+  });
+}
+
+export async function changePassword(userId: string, currentPassword: string, newPassword: string) {
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  if (!user || !user.isActive) throw ApiError.unauthorized("Account not found or disabled");
+
+  // 400, not 401: a wrong password here must not look like an expired session to the frontend.
+  if (!(await verifyPassword(currentPassword, user.passwordHash))) {
+    throw ApiError.badRequest("Current password is incorrect");
+  }
+
+  const passwordHash = await hashPassword(newPassword);
+
+  return await prisma.$transaction(async (tx) => {
+    await tx.user.update({ where: { id: userId }, data: { passwordHash } });
+
+    // Every other device is signed out. This one gets fresh tokens.
+    await tx.refreshToken.updateMany({ where: { userId, revokedAt: null }, data: { revokedAt: new Date() } });
+
+    const tokens = await issueTokens(user, tx);
+    return { user: publicUser(user), ...tokens };
+  });
+}
+
 // Housekeeping: delete tokens that have expired. Returns how many were removed.
 export async function cleanupExpiredRefreshTokens(): Promise<number> {
-  const { count } = await prisma.refreshToken.deleteMany({
-    where: { expiresAt: { lt: new Date() } },
-  });
-  return count;
+  const now = new Date();
+  const [refresh, email] = await prisma.$transaction([
+    prisma.refreshToken.deleteMany({ where: { expiresAt: { lt: now } } }),
+    prisma.emailToken.deleteMany({ where: { expiresAt: { lt: now } } }),
+  ]);
+  return refresh.count + email.count;
 }
 // ==========================================
 // END OF FILE: backend/src/modules/auth/auth.service.ts

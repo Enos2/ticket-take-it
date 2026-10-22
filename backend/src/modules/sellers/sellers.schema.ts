@@ -1,8 +1,9 @@
 // ==========================================
 // FILE: backend/src/modules/sellers/sellers.schema.ts
-// PURPOSE: Validates the data required to become a seller and to list seller orders.
+// PURPOSE: Validates seller onboarding and dashboard queries.
 // ==========================================
 import { z } from "zod";
+import { paginationSchema } from "../../utils/pagination";
 
 export const onboardSellerSchema = z.object({
   businessName: z.string().trim().min(2).max(100),
@@ -16,14 +17,26 @@ export const onboardSellerSchema = z.object({
     .optional(),
 });
 
-export const sellerOrdersQuerySchema = z.object({
-  page: z.coerce.number().int().min(1).default(1),
-  limit: z.coerce.number().int().min(1).max(100).default(20),
+export const sellerOrdersQuerySchema = paginationSchema.extend({
   status: z.enum(["PENDING", "RESERVED", "PAID", "CANCELLED", "REFUNDED", "EXPIRED"]).optional(),
+});
+
+export const sellerEventsQuerySchema = paginationSchema.extend({
+  status: z.enum(["DRAFT", "PUBLISHED", "SOLD_OUT", "CANCELLED", "COMPLETED"]).optional(),
+});
+
+export const attendeesQuerySchema = paginationSchema.extend({
+  status: z.enum(["VALID", "USED", "VOID"]).optional(),
+});
+
+export const sellerEventParamSchema = z.object({
+  eventId: z.string().min(1).max(64),
 });
 
 export type OnboardSellerInput = z.infer<typeof onboardSellerSchema>;
 export type SellerOrdersQuery = z.infer<typeof sellerOrdersQuerySchema>;
+export type SellerEventsQuery = z.infer<typeof sellerEventsQuerySchema>;
+export type AttendeesQuery = z.infer<typeof attendeesQuerySchema>;
 // ==========================================
 // END OF FILE: backend/src/modules/sellers/sellers.schema.ts
 // ==========================================
