@@ -6,12 +6,13 @@ import { randomBytes } from "crypto";
 import { Prisma, Role } from "@prisma/client";
 import { prisma } from "../../config/database";
 import { ApiError } from "../../utils/ApiError";
+import { background } from "../../utils/background";
+import { notifyEventCancelled } from "../notifications/notifications.service";
 import { releaseStock } from "../orders/orders.service";
 import { getManagedEvent } from "./event.access";
 import { CreateEventInput, UpdateEventInput, ListEventsQuery } from "./events.schema";
-import { background } from "../../utils/background";
-import { notifyEventCancelled } from "../notifications/notifications.service";
 
+// URL-friendly slug with a random suffix to avoid collisions.
 function generateSlug(title: string): string {
   const base =
     title
@@ -28,6 +29,7 @@ function generateSlug(title: string): string {
 
 const MAX_SLUG_ATTEMPTS = 3;
 
+// Only tickets that are on sale, cheapest first.
 const activeTickets = {
   where: { isActive: true },
   orderBy: { priceCents: "asc" },
@@ -54,7 +56,7 @@ export async function createEvent(userId: string, input: CreateEventInput) {
           startsAt: new Date(input.startsAt),
           endsAt: new Date(input.endsAt),
           bannerUrl: input.bannerUrl,
-          status: "DRAFT",
+          status: "DRAFT", // sellers add tickets, then publish
         },
       });
     } catch (err) {
@@ -64,19 +66,20 @@ export async function createEvent(userId: string, input: CreateEventInput) {
     }
   }
 
+  // Unreachable, keeps TypeScript satisfied.
   throw ApiError.badRequest("Could not create event");
 }
 
 export async function getAllEvents({ page, limit }: ListEventsQuery) {
   const where: Prisma.EventWhereInput = {
     status: "PUBLISHED",
-    endsAt: { gte: new Date() },
+    endsAt: { gte: new Date() }, // hide events that have already ended
   };
 
   const [items, total] = await prisma.$transaction([
     prisma.event.findMany({
       where,
-      include: { ticketTypes: activeTickets },
+      include: { ticketTypes: activeTickets }, // so users can see prices
       orderBy: { startsAt: "asc" },
       take: limit,
       skip: (page - 1) * limit,
@@ -118,6 +121,7 @@ export async function updateEvent(userId: string, role: Role, eventId: string, i
     }
   }
 
+  // The slug stays the same so existing links keep working.
   return await prisma.event.update({
     where: { id: eventId },
     data: {
@@ -128,7 +132,7 @@ export async function updateEvent(userId: string, role: Role, eventId: string, i
       country: input.country,
       startsAt: input.startsAt ? startsAt : undefined,
       endsAt: input.endsAt ? endsAt : undefined,
-      bannerUrl: input.bannerUrl,
+      bannerUrl: input.bannerUrl, // null clears it
     },
   });
 }
@@ -168,6 +172,8 @@ export async function unpublishEvent(userId: string, role: Role, eventId: string
   return await prisma.event.findUniqueOrThrow({ where: { id: eventId } });
 }
 
+// Cancels the event, stops sales, voids issued tickets, releases unpaid orders and emails buyers.
+// Paid orders stay PAID until an admin refunds them (POST /admin/events/:id/refund-orders).
 export async function cancelEvent(userId: string, role: Role, eventId: string) {
   const event = await getManagedEvent(userId, role, eventId);
   if (event.status === "COMPLETED") throw ApiError.badRequest("A completed event cannot be cancelled");
@@ -185,6 +191,7 @@ export async function cancelEvent(userId: string, role: Role, eventId: string) {
       await tx.ticketType.updateMany({ where: { eventId }, data: { isActive: false } });
       await tx.ticket.updateMany({ where: { eventId, status: "VALID" }, data: { status: "VOID" } });
 
+      // Unpaid orders that include this event can no longer be paid. Release them.
       const unpaid = await tx.order.findMany({
         where: {
           status: { in: ["PENDING", "RESERVED"] },
@@ -203,8 +210,6 @@ export async function cancelEvent(userId: string, role: Role, eventId: string) {
     });
   }
 
-  if (newlyCancelled) background(notifyEventCancelled(eventId), "event cancelled emails");
-
   const [updated, paidOrdersToRefund] = await Promise.all([
     prisma.event.findUniqueOrThrow({ where: { id: eventId } }),
     prisma.order.count({
@@ -212,9 +217,12 @@ export async function cancelEvent(userId: string, role: Role, eventId: string) {
     }),
   ]);
 
+  if (newlyCancelled) background(notifyEventCancelled(eventId), "event cancelled emails");
+
   return { event: updated, paidOrdersToRefund };
 }
 
+// Only events that never had an order can be deleted. Otherwise cancel.
 export async function deleteEvent(userId: string, role: Role, eventId: string) {
   await getManagedEvent(userId, role, eventId);
 
@@ -225,6 +233,4 @@ export async function deleteEvent(userId: string, role: Role, eventId: string) {
 }
 // ==========================================
 // END OF FILE: backend/src/modules/events/events.service.ts
-// LOCATION: backend/src/modules/events/events.service.ts
-// LAST UPDATED: October 22, 2026
 // ==========================================

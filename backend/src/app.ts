@@ -30,11 +30,27 @@ app.use(cors({ origin: allowedOrigins, credentials: true }));
 // don't flood the logs or use up the request limit.
 app.get("/health", (_req, res) => res.json({ success: true, status: "API is healthy" }));
 
-app.use(pinoHttp({ logger }));
+// The M-Pesa callback URL carries a secret. Never write it to the logs.
+const hideCallbackSecret = (url = "") => url.replace(/(\/callbacks\/[^/]+\/)[^/?#]+/, "$1[redacted]");
+
+app.use(
+  pinoHttp({
+    logger,
+    serializers: {
+      // No headers are logged at all, so tokens and signatures can't leak.
+      req: (req: { id?: unknown; method?: string; url?: string }) => ({
+        id: req.id,
+        method: req.method,
+        url: hideCallbackSecret(req.url),
+      }),
+      res: (res: { statusCode?: number }) => ({ statusCode: res.statusCode }),
+    },
+  })
+);
 app.use(generalLimiter);
 
-// NOTE: Stripe webhooks need the raw body. When you add them, mount
-// express.raw({ type: "application/json" }) for that route BEFORE this line.
+// NOTE: card gateways (Stripe, Paystack) sign the raw request body. When one is added,
+// mount express.raw({ type: "application/json" }) for its webhook route BEFORE this line.
 app.use(express.json({ limit: "100kb" }));
 
 app.use("/api/v1", routes);

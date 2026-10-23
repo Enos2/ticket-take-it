@@ -1,72 +1,103 @@
 // ==========================================
 // FILE: backend/src/modules/payments/payments.routes.ts
-// PURPOSE: Routes for creating payments and handling webhooks.
+// PURPOSE: Routes for starting payments and receiving provider callbacks.
 // ==========================================
-import { createHash, timingSafeEqual } from "crypto";
 import { Router, Request, Response, NextFunction } from "express";
-import { z } from "zod";
-import { authenticate } from "../../middleware/auth.middleware";
+import { authenticate, requireVerifiedEmail } from "../../middleware/auth.middleware";
+import { paymentLimiter } from "../../middleware/rateLimit.middleware";
+import { validate } from "../../middleware/validate.middleware";
 import { env } from "../../config/env";
-import * as service from "./payments.service";
 import { ApiError } from "../../utils/ApiError";
+import { logger } from "../../utils/logger";
+import { parse } from "../../utils/parse";
+import { safeEqual } from "../../utils/safeEqual";
+import { initializePaymentSchema, mockWebhookSchema, paymentOrderParamSchema } from "./payments.schema";
+import * as service from "./payments.service";
+import { handleStkCallback } from "./mpesa.service";
+import { handleWebhook } from "./settlement.service";
 
 const router = Router();
 
-const orderIdParamSchema = z.object({ orderId: z.string().min(1) });
-
-const webhookSchema = z.object({
-  reference: z.string().min(1),
-  status: z.enum(["SUCCEEDED", "FAILED"]),
-  provider: z.enum(["STRIPE", "MPESA"]).default("STRIPE"),
-  providerRef: z.string().min(1).max(200),
-  amountCents: z.number().int().positive(),
-  currency: z.string().length(3),
+// ---- public: which payment methods exist ----
+router.get("/methods", (_req: Request, res: Response) => {
+  res.json({ success: true, data: service.getPaymentMethods() });
 });
 
-function parse<T extends z.ZodTypeAny>(schema: T, input: unknown): z.infer<T> {
-  const result = schema.safeParse(input);
-  if (!result.success) {
-    const message = result.error.issues
-      .map((i) => `${i.path.join(".") || "input"}: ${i.message}`)
-      .join("; ");
-    throw ApiError.badRequest(message);
+// ---- buyer ----
+router.post(
+  "/initialize/:orderId",
+  authenticate,
+  paymentLimiter,
+  requireVerifiedEmail,
+  validate(initializePaymentSchema),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      if (!req.user) throw ApiError.unauthorized();
+      const { orderId } = parse(paymentOrderParamSchema, req.params);
+      const data = await service.initializePayment(orderId, req.user.sub, req.body);
+      res.json({ success: true, data });
+    } catch (err) {
+      next(err);
+    }
   }
-  return result.data;
-}
+);
 
-// Rejects any webhook that doesn't carry the shared secret.
-// Both values are hashed first so the comparison is constant-time and length-safe.
-function verifyWebhookSignature(req: Request, _res: Response, next: NextFunction) {
-  const provided = req.header("x-payment-signature") ?? "";
-  const secret = process.env.PAYMENT_WEBHOOK_SECRET;
-  if (!secret) return next(ApiError.unauthorized());
-  const a = createHash("sha256").update(provided).digest();
-  const b = createHash("sha256").update(secret).digest();
-  if (!timingSafeEqual(a, b)) return next(ApiError.unauthorized());
-  next();
-}
-
-router.post("/initialize/:orderId", authenticate, async (req: Request, res: Response, next: NextFunction) => {
+router.get("/status/:orderId", authenticate, async (req: Request, res: Response, next: NextFunction) => {
   try {
     if (!req.user) throw ApiError.unauthorized();
-    const { orderId } = parse(orderIdParamSchema, req.params);
-    const data = await service.initializePayment(orderId, req.user.sub);
+    const { orderId } = parse(paymentOrderParamSchema, req.params);
+    const data = await service.getPaymentStatus(orderId, req.user.sub);
     res.json({ success: true, data });
   } catch (err) {
     next(err);
   }
 });
 
-// Webhooks don't use user auth. They are authenticated by the provider signature.
-router.post("/webhook", verifyWebhookSignature, async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const input = parse(webhookSchema, req.body);
-    const result = await service.handleWebhook(input);
-    res.json({ success: true, result });
-  } catch (err) {
-    next(err);
+// ---- Safaricom callback. Protected by the secret in the URL, and success is double-checked with Safaricom. ----
+router.post("/callbacks/stk/:secret", async (req: Request, res: Response) => {
+  const cfg = env.mpesa;
+  if (!cfg || !safeEqual(req.params.secret, cfg.callbackSecret)) {
+    return res.status(404).json({ success: false, message: "Not found" });
   }
+
+  try {
+    await handleStkCallback(req.body);
+  } catch (err) {
+    // Safaricom doesn't retry, and the reconciliation job will pick the payment up.
+    logger.error({ err }, "STK callback processing failed");
+  }
+
+  return res.json({ ResultCode: 0, ResultDesc: "Accepted" });
 });
+
+// ---- Mock webhook for development testing only ----
+function mockOnly(_req: Request, _res: Response, next: NextFunction) {
+  if (!env.ENABLE_MOCK_PAYMENTS) return next(ApiError.notFound("Not found"));
+  next();
+}
+
+function verifyMockSignature(req: Request, _res: Response, next: NextFunction) {
+  const provided = req.header("x-payment-signature") ?? "";
+  if (!env.PAYMENT_WEBHOOK_SECRET || !safeEqual(provided, env.PAYMENT_WEBHOOK_SECRET)) {
+    return next(ApiError.unauthorized());
+  }
+  next();
+}
+
+router.post(
+  "/webhook",
+  mockOnly,
+  verifyMockSignature,
+  validate(mockWebhookSchema),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const result = await handleWebhook({ ...req.body, provider: "MANUAL" });
+      res.json({ success: true, result });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
 
 export default router;
 // ==========================================

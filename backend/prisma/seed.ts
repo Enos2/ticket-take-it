@@ -6,19 +6,13 @@ import "dotenv/config";
 import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
 
-declare const process: {
-  env: Record<string, string | undefined>;
-};
-
-declare const Buffer: {
-  byteLength(value: string, encoding?: string): number;
-};
-
 const prisma = new PrismaClient();
 
+// Local development fallbacks only. Production must supply its own values.
 const DEV_DEFAULT_EMAIL = "admin@tickettakeit.com";
 const DEV_DEFAULT_PASSWORD = "AdminPassword123!";
 
+// Same rules as registration (see auth.schema.ts).
 function passwordProblem(password: string): string | null {
   if (password.length < 8) return "must be at least 8 characters";
   if (!/[A-Z]/.test(password)) return "must contain an uppercase letter";
@@ -57,6 +51,7 @@ async function main() {
 
   if (existing) {
     if (existing.role !== "ADMIN") {
+      // Never auto-promote: the existing account's owner may not be you.
       throw new Error(
         `${email} already exists as a ${existing.role} account. Refusing to promote it. ` +
           `Use a different SEED_ADMIN_EMAIL, or change that account's role by hand if you own it.`
@@ -72,7 +67,7 @@ async function main() {
       fullName,
       passwordHash: await bcrypt.hash(password, bcryptRounds()),
       role: "ADMIN",
-      emailVerified: true,
+      emailVerified: true, // the admin never needs to verify an email
     },
   });
 
@@ -86,13 +81,11 @@ async function main() {
 main()
   .catch((err) => {
     console.error(err instanceof Error ? err.message : err);
-    throw err;
+    process.exitCode = 1;
   })
   .finally(async () => {
     await prisma.$disconnect();
   });
 // ==========================================
 // END OF FILE: backend/prisma/seed.ts
-// LOCATION: backend/prisma/seed.ts
-// LAST UPDATED: October 22, 2026
 // ==========================================

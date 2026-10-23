@@ -3,9 +3,11 @@
 // PURPOSE: One-time tokens for email verification and password reset.
 // ==========================================
 import { createHash, randomBytes } from "crypto";
-import { EmailTokenType, Prisma } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 import { prisma } from "../../config/database";
 import { ApiError } from "../../utils/ApiError";
+
+export type EmailTokenType = "VERIFY_EMAIL" | "RESET_PASSWORD";
 
 // Only the hash is stored, so a database leak can't be used to verify or reset anyone.
 const hashToken = (token: string) => createHash("sha256").update(token).digest("hex");

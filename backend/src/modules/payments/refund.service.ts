@@ -5,20 +5,19 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "../../config/database";
 import { ApiError } from "../../utils/ApiError";
+import { background } from "../../utils/background";
+import { toJsonObject } from "../../utils/json";
 import { logger } from "../../utils/logger";
 import { skipTake, Pagination } from "../../utils/pagination";
 import { releaseStock } from "../orders/orders.service";
-import { background } from "../../utils/background";
 import { notifyOrderRefunded } from "../notifications/notifications.service";
 
-function asObject(value: Prisma.JsonValue | null): Prisma.JsonObject {
-  return value && typeof value === "object" && !Array.isArray(value) ? (value as Prisma.JsonObject) : {};
-}
+const isFlagged = (value: unknown) => toJsonObject(value).needsRefund === true;
 
-const isFlagged = (value: Prisma.JsonValue | null) => asObject(value).needsRefund === true;
-
+// Voids the order's tickets, returns stock and puts the real payment in the needs-refund queue.
+// Money is returned by hand for now (M-Pesa). A card provider will refund automatically here later.
 export async function refundOrder(adminId: string, orderId: string, reason?: string) {
-  const { order, refundable } = await prisma.$transaction(async (tx) => {
+  const { order, toReturn } = await prisma.$transaction(async (tx) => {
     const found = await tx.order.findUnique({
       where: { id: orderId },
       include: { items: true, tickets: { select: { status: true } }, payments: true },
@@ -31,6 +30,7 @@ export async function refundOrder(adminId: string, orderId: string, reason?: str
 
     const now = new Date();
 
+    // Guarded: two admins clicking at once, only one wins.
     const flipped = await tx.order.updateMany({
       where: { id: orderId, status: "PAID" },
       data: { status: "REFUNDED", refundedAt: now },
@@ -40,24 +40,26 @@ export async function refundOrder(adminId: string, orderId: string, reason?: str
     await tx.ticket.updateMany({ where: { orderId, status: "VALID" }, data: { status: "VOID" } });
     await releaseStock(tx, found.items);
 
-    const refundable = found.payments.filter((p) => p.status === "SUCCEEDED" && !isFlagged(p.metadata));
+    // The genuine payment. Duplicate charges already flagged are handled in the queue separately.
+    const toReturn = found.payments.filter((p) => p.status === "SUCCEEDED" && !isFlagged(p.metadata));
 
-    for (const p of refundable) {
+    for (const p of toReturn) {
       await tx.payment.update({
         where: { id: p.id },
         data: {
-          status: "REFUNDED",
           metadata: {
-            ...asObject(p.metadata),
-            refundedAt: now.toISOString(),
-            refundedBy: adminId,
-            reason: reason ?? null,
+            ...toJsonObject(p.metadata),
+            needsRefund: true,
+            reason: "order_refunded",
+            refundNote: reason ?? null,
+            refundRequestedBy: adminId,
+            refundRequestedAt: now.toISOString(),
           },
         },
       });
     }
 
-    return { order: found, refundable };
+    return { order: found, toReturn };
   });
 
   logger.info(`Order ${order.reference} refunded by admin ${adminId}`);
@@ -67,8 +69,10 @@ export async function refundOrder(adminId: string, orderId: string, reason?: str
     orderId: order.id,
     reference: order.reference,
     status: "REFUNDED" as const,
-    manualRefundRequired: refundable.length > 0,
-    payments: refundable.map((p) => ({
+    // True until the money has been returned and the payment is marked resolved.
+    manualRefundRequired: toReturn.length > 0,
+    payments: toReturn.map((p) => ({
+      paymentId: p.id,
       provider: p.provider,
       providerRef: p.providerRef,
       amountCents: p.amountCents,
@@ -77,6 +81,49 @@ export async function refundOrder(adminId: string, orderId: string, reason?: str
   };
 }
 
+// Refunds every paid order of a CANCELLED event, 25 per call.
+// Call again until `refunded` is 0. `needsReview` counts orders that need a human decision
+// (tickets already scanned, or the order also contains tickets for another event).
+export async function refundEventOrders(adminId: string, eventId: string, reason?: string) {
+  const event = await prisma.event.findUnique({ where: { id: eventId }, select: { status: true } });
+  if (!event) throw ApiError.notFound("Event not found");
+  if (event.status !== "CANCELLED") throw ApiError.badRequest("Cancel the event before refunding its orders");
+
+  const eligible: Prisma.OrderWhereInput = {
+    status: "PAID",
+    items: { some: { ticketType: { eventId } }, every: { ticketType: { eventId } } },
+    tickets: { none: { status: "USED" } },
+  };
+
+  const batch = await prisma.order.findMany({
+    where: eligible,
+    select: { id: true, reference: true },
+    orderBy: { createdAt: "asc" },
+    take: 25,
+  });
+
+  const failed: { reference: string; error: string }[] = [];
+  let refunded = 0;
+
+  for (const o of batch) {
+    try {
+      await refundOrder(adminId, o.id, reason ?? "Event cancelled");
+      refunded++;
+    } catch (err) {
+      failed.push({ reference: o.reference, error: err instanceof Error ? err.message : "Unknown error" });
+    }
+  }
+
+  const [remaining, allPaid] = await Promise.all([
+    prisma.order.count({ where: eligible }),
+    prisma.order.count({ where: { status: "PAID", items: { some: { ticketType: { eventId } } } } }),
+  ]);
+
+  return { refunded, failed, remaining, needsReview: allPaid - remaining };
+}
+
+// Payments flagged because money must go back to a customer:
+// order refunds, double charges, late payments after sell-out, amount mismatches.
 export async function listPaymentsNeedingRefund(pagination: Pagination) {
   const where: Prisma.PaymentWhereInput = {
     status: "SUCCEEDED",
@@ -88,7 +135,11 @@ export async function listPaymentsNeedingRefund(pagination: Pagination) {
       where,
       include: {
         order: {
-          select: { reference: true, user: { select: { email: true, fullName: true, phone: true } } },
+          select: {
+            reference: true,
+            status: true,
+            user: { select: { email: true, fullName: true, phone: true } },
+          },
         },
       },
       orderBy: { createdAt: "asc" },
@@ -100,6 +151,7 @@ export async function listPaymentsNeedingRefund(pagination: Pagination) {
   return { items, total, page: pagination.page, limit: pagination.limit };
 }
 
+// Call after the money has been returned to the customer. `note` is where the reversal receipt goes.
 export async function resolveRefundPayment(adminId: string, paymentId: string, note?: string) {
   const payment = await prisma.payment.findUnique({ where: { id: paymentId } });
   if (!payment || !isFlagged(payment.metadata)) throw ApiError.notFound("No pending refund found for this payment");
@@ -110,7 +162,8 @@ export async function resolveRefundPayment(adminId: string, paymentId: string, n
     data: {
       status: "REFUNDED",
       metadata: {
-        ...asObject(payment.metadata),
+        ...toJsonObject(payment.metadata),
+        needsRefund: false,
         resolvedAt: new Date().toISOString(),
         resolvedBy: adminId,
         note: note ?? null,
@@ -124,6 +177,4 @@ export async function resolveRefundPayment(adminId: string, paymentId: string, n
 }
 // ==========================================
 // END OF FILE: backend/src/modules/payments/refund.service.ts
-// LOCATION: backend/src/modules/payments/refund.service.ts
-// LAST UPDATED: October 22, 2026
 // ==========================================

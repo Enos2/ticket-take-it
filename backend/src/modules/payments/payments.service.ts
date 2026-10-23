@@ -1,35 +1,27 @@
 // ==========================================
 // FILE: backend/src/modules/payments/payments.service.ts
-// PURPOSE: Handles payment initialization and webhooks.
+// PURPOSE: Starts payments with the chosen provider and reports their progress.
 // ==========================================
-import { Prisma, PaymentStatus } from "@prisma/client";
 import { prisma } from "../../config/database";
+import { env } from "../../config/env";
 import { ApiError } from "../../utils/ApiError";
-import { logger } from "../../utils/logger";
-import { issueTicketsForOrder } from "../orders/fulfillment.service";
-import { background } from "../../utils/background";
-import { notifyOrderPaid } from "../notifications/notifications.service";
+import { toJsonObject } from "../../utils/json";
+import { startMpesaPayment } from "./mpesa.service";
+import type { InitializePaymentInput } from "./payments.schema";
 
-export interface WebhookInput {
-  reference: string;
-  status: "SUCCEEDED" | "FAILED";
-  provider: "STRIPE" | "MPESA";
-  providerRef: string;
-  amountCents: number;
-  currency: string;
+// Tells the frontend which payment buttons to show.
+export function getPaymentMethods() {
+  return {
+    mpesa: Boolean(env.mpesa),
+    card: false, // switched on when the card provider is added
+    mock: env.ENABLE_MOCK_PAYMENTS,
+  };
 }
 
-export type WebhookResult = "processed" | "duplicate" | "needs_refund" | "failed_recorded";
-
-class StockUnavailableError extends Error {}
-class StatusChangedError extends Error {}
-
-const isUniqueViolation = (err: unknown) =>
-  err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002";
-
-export async function initializePayment(orderId: string, userId: string) {
+export async function initializePayment(orderId: string, userId: string, input: InitializePaymentInput) {
   const order = await prisma.order.findUnique({ where: { id: orderId } });
 
+  // Same message for "missing" and "not yours" so order ids can't be probed.
   if (!order || order.userId !== userId) throw ApiError.notFound("Order not found");
   if (order.status === "PAID") throw ApiError.badRequest("Order is already paid");
   if (order.status !== "PENDING" && order.status !== "RESERVED") {
@@ -39,143 +31,47 @@ export async function initializePayment(orderId: string, userId: string) {
     throw ApiError.badRequest("Your reservation has expired. Please create a new order.");
   }
 
-  return {
-    clientSecret: `mock_secret_${order.reference}`,
+  const base = {
+    orderId: order.id,
+    reference: order.reference,
     amount: order.totalCents,
     currency: order.currency,
     expiresAt: order.reservationExpiresAt,
   };
-}
 
-async function recordPayment(
-  orderId: string,
-  input: WebhookInput,
-  status: "SUCCEEDED" | "FAILED",
-  metadata?: Prisma.InputJsonValue
-) {
-  try {
-    await prisma.payment.create({
-      data: {
-        orderId,
-        provider: input.provider,
-        providerRef: input.providerRef,
-        status,
-        amountCents: input.amountCents,
-        currency: input.currency.toUpperCase(),
-        metadata,
-      },
-    });
-  } catch (err) {
-    if (!isUniqueViolation(err)) throw err;
-  }
-}
-
-export async function handleWebhook(input: WebhookInput): Promise<WebhookResult> {
-  for (let attempt = 0; attempt < 3; attempt++) {
-    const result = await processWebhook(input);
-    if (result !== "retry") return result;
-  }
-  throw ApiError.badRequest("Order is being updated, please retry the webhook");
-}
-
-async function processWebhook(input: WebhookInput): Promise<WebhookResult | "retry"> {
-  const seenStatuses: PaymentStatus[] = input.status === "SUCCEEDED" ? ["SUCCEEDED", "REFUNDED"] : ["FAILED"];
-  const seen = await prisma.payment.findFirst({
-    where: { provider: input.provider, providerRef: input.providerRef, status: { in: seenStatuses } },
-    select: { id: true },
-  });
-  if (seen) return "duplicate";
-
-  const order = await prisma.order.findUnique({
-    where: { reference: input.reference },
-    include: { items: true },
-  });
-  if (!order) throw ApiError.notFound("Order not found");
-
-  if (input.status === "FAILED") {
-    await recordPayment(order.id, input, "FAILED");
-    return "failed_recorded";
-  }
-
-  if (
-    input.amountCents !== order.totalCents ||
-    input.currency.toUpperCase() !== order.currency.toUpperCase()
-  ) {
-    logger.error(
-      `Webhook amount mismatch for ${order.reference}: got ${input.amountCents} ${input.currency}, expected ${order.totalCents} ${order.currency}`
-    );
-    throw ApiError.badRequest("Payment amount or currency does not match the order");
-  }
-
-  if (order.status === "PAID" || order.status === "REFUNDED") {
-    await recordPayment(order.id, input, "SUCCEEDED", {
-      needsRefund: true,
-      reason: "order_already_settled",
-    });
-    logger.warn(`Duplicate charge on ${order.reference}. Needs refund (${input.providerRef}).`);
-    return "needs_refund";
-  }
-
-  const fromStatus = order.status; 
-  const wasReleased = fromStatus === "CANCELLED" || fromStatus === "EXPIRED";
-
-  try {
-    await prisma.$transaction(async (tx) => {
-      if (wasReleased) {
-        const sorted = [...order.items].sort((a, b) => (a.ticketTypeId < b.ticketTypeId ? -1 : 1));
-        for (const it of sorted) {
-          const ticket = await tx.ticketType.findUnique({ where: { id: it.ticketTypeId } });
-          if (!ticket) throw new StockUnavailableError();
-
-          const claimed = await tx.ticketType.updateMany({
-            where: { id: ticket.id, sold: { lte: ticket.quantity - it.quantity } },
-            data: { sold: { increment: it.quantity } },
-          });
-          if (claimed.count === 0) throw new StockUnavailableError();
-        }
-      }
-
-      const moved = await tx.order.updateMany({
-        where: { id: order.id, status: fromStatus },
-        data: { status: "PAID", paidAt: new Date() },
-      });
-      if (moved.count === 0) throw new StatusChangedError();
-
-      await tx.payment.create({
-        data: {
-          orderId: order.id,
-          provider: input.provider,
-          providerRef: input.providerRef,
-          status: "SUCCEEDED",
-          amountCents: input.amountCents,
-          currency: input.currency.toUpperCase(),
-        },
-      });
-
-      await issueTicketsForOrder(tx, order.id);
-    });
-
-    background(notifyOrderPaid(order.id), "order confirmation email");
-    return "processed";
-  } catch (err) {
-    if (err instanceof StatusChangedError) return "retry";
-
-    if (isUniqueViolation(err)) return "duplicate";
-
-    if (err instanceof StockUnavailableError) {
-      await recordPayment(order.id, input, "SUCCEEDED", {
-        needsRefund: true,
-        reason: "stock_unavailable_after_expiry",
-      });
-      logger.warn(`Late payment on ${order.reference} but stock is gone. Needs refund (${input.providerRef}).`);
-      return "needs_refund";
+  switch (input.provider) {
+    case "MPESA": {
+      const result = await startMpesaPayment(order, input.phone);
+      return { ...base, provider: "MPESA" as const, checkoutRequestId: result.checkoutRequestId, message: result.message };
     }
 
-    throw err;
+    case "MOCK": {
+      if (!env.ENABLE_MOCK_PAYMENTS) throw ApiError.badRequest("Mock payments are disabled");
+      return { ...base, provider: "MOCK" as const, clientSecret: `mock_secret_${order.reference}` };
+    }
   }
+}
+
+// The frontend polls this after the customer taps "Pay" until `paid` is true or `failureReason` appears.
+export async function getPaymentStatus(orderId: string, userId: string) {
+  const order = await prisma.order.findUnique({
+    where: { id: orderId },
+    include: { payments: { orderBy: { createdAt: "desc" }, take: 1 } },
+  });
+  if (!order || order.userId !== userId) throw ApiError.notFound("Order not found");
+
+  const latest = order.payments[0];
+  const reason = toJsonObject(latest?.metadata).reason;
+
+  return {
+    reference: order.reference,
+    orderStatus: order.status,
+    paid: order.status === "PAID",
+    paymentStatus: latest?.status ?? null,
+    failureReason: latest?.status === "FAILED" ? (typeof reason === "string" ? reason : "The payment was not completed") : null,
+    expiresAt: order.reservationExpiresAt,
+  };
 }
 // ==========================================
 // END OF FILE: backend/src/modules/payments/payments.service.ts
-// LOCATION: backend/src/modules/payments/payments.service.ts
-// LAST UPDATED: October 22, 2026
 // ==========================================

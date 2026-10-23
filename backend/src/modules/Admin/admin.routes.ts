@@ -75,6 +75,14 @@ router.get("/events", handle(async (req, res) => {
   res.json({ success: true, data: items, meta: { total, page, limit } });
 }));
 
+// Refunds all paid orders of a cancelled event, 25 per call. Repeat until `refunded` is 0.
+router.post("/events/:id/refund-orders", handle(async (req, res) => {
+  const { id } = parse(idParam, req.params);
+  const { reason } = parse(reasonBody, req.body ?? {});
+  const data = await refunds.refundEventOrders(req.user!.sub, id, reason);
+  res.json({ success: true, data });
+}));
+
 // ---- orders and refunds ----
 router.get("/orders", handle(async (req, res) => {
   const { status, eventId, userId, ...pagination } = parse(ordersQuery, req.query);

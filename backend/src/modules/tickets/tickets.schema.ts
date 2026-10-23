@@ -22,7 +22,7 @@ export const createTicketTypeSchema = z
     description: z.string().trim().max(1000).optional(),
     tier: z.enum(["EARLY_BIRD", "REGULAR", "VIP", "GROUP"]),
     priceCents: z.number().int().min(0).max(MAX_PRICE_CENTS), // 0 = free ticket
-    currency: z.string().trim().length(3).toUpperCase().default("USD"),
+    currency: z.string().trim().length(3).toUpperCase().default("KES"),
     quantity: z.number().int().positive().max(MAX_QUANTITY),
 
     // Early Bird window (required when tier is EARLY_BIRD)
@@ -35,6 +35,15 @@ export const createTicketTypeSchema = z
     maxGroupSize: z.number().int().min(2).optional(),
   })
   .superRefine((d, ctx) => {
+    // M-Pesa takes whole shillings only, so KES prices must be a multiple of 100 cents.
+    if (d.currency === "KES" && d.priceCents % 100 !== 0) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["priceCents"],
+        message: "KES prices must be whole shillings (a multiple of 100 cents)",
+      });
+    }
+
     const isGroup = d.tier === "GROUP" || d.isGroup;
 
     if (isGroup) {

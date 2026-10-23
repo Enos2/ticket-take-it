@@ -8,9 +8,10 @@ import { logger } from "./utils/logger";
 import { prisma } from "./config/database";
 import { releaseExpiredOrders } from "./modules/orders/orders.service";
 import { cleanupExpiredRefreshTokens } from "./modules/auth/auth.service";
+import { reconcilePayments } from "./modules/payments/payments.jobs";
 
 const server = app.listen(env.PORT, () => {
-  logger.info(`🚀 Ticket Take It API running on http://localhost:${env.PORT}`);
+  logger.info(`Ticket Take It API running on http://localhost:${env.PORT}`);
 });
 
 // Load balancers keep idle connections open for about 60s. Node's default is 5s,
@@ -42,7 +43,8 @@ function startJob(name: string, intervalMs: number, job: () => Promise<number>) 
 
 const timers = [
   startJob("releaseExpiredOrders", 60_000, releaseExpiredOrders), // every minute
-  startJob("cleanupExpiredRefreshTokens", 60 * 60_000, cleanupExpiredRefreshTokens), // every hour
+  startJob("reconcilePayments", 60_000, reconcilePayments), // every minute
+  startJob("cleanupExpiredTokens", 60 * 60_000, cleanupExpiredRefreshTokens), // every hour
 ];
 
 // ---- Graceful shutdown ----

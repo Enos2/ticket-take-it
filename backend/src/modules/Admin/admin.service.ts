@@ -5,8 +5,8 @@
 import { Prisma, EventStatus, OrderStatus, SellerProfile } from "@prisma/client";
 import { prisma } from "../../config/database";
 import { ApiError } from "../../utils/ApiError";
-import { Pagination, skipTake } from "../../utils/pagination";
 import { background } from "../../utils/background";
+import { Pagination, skipTake } from "../../utils/pagination";
 import { notifySellerStatusChanged } from "../notifications/notifications.service";
 
 type SellerStatus = SellerProfile["status"];
@@ -45,15 +45,16 @@ export async function updateSellerStatus(sellerId: string, status: SellerStatus)
     where: { id: sellerId },
     data: {
       status,
+      // Only stamp on approval; leave the original date intact otherwise.
       ...(status === "APPROVED" && { approvedAt: new Date() }),
     },
   });
 
   if (seller.status !== status) background(notifySellerStatusChanged(sellerId), "seller status email");
-  
   return updated;
 }
 
+// Activating or deactivating an account. Deactivation also ends all of that user's sessions.
 export async function setUserActive(adminId: string, userId: string, isActive: boolean) {
   if (adminId === userId) throw ApiError.badRequest("You cannot change your own account status");
 
@@ -151,11 +152,10 @@ export async function getStats() {
     paidOrders,
     ticketsIssued,
     paymentsNeedingRefund: needsRefund,
+    // One entry per currency. Amounts in cents.
     revenue: revenue.map((r) => ({ currency: r.currency, totalCents: r._sum.totalCents ?? 0 })),
   };
 }
 // ==========================================
 // END OF FILE: backend/src/modules/admin/admin.service.ts
-// LOCATION: backend/src/modules/admin/admin.service.ts
-// LAST UPDATED: October 22, 2026
 // ==========================================

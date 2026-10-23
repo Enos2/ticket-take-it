@@ -67,6 +67,11 @@ export async function updateTicketType(
   const ticket = await prisma.ticketType.findFirst({ where: { id: ticketId, eventId } });
   if (!ticket) throw ApiError.notFound("Ticket type not found");
 
+  // M-Pesa takes whole shillings only.
+  if (input.priceCents !== undefined && ticket.currency === "KES" && input.priceCents % 100 !== 0) {
+    throw ApiError.badRequest("KES prices must be whole shillings (a multiple of 100 cents)");
+  }
+
   const quantity = input.quantity ?? ticket.quantity;
   if (quantity < ticket.sold) {
     throw ApiError.badRequest(`Quantity cannot go below the ${ticket.sold} already sold or reserved`);
