@@ -1,7 +1,9 @@
 // ==========================================
 // FILE: backend/src/routes/index.ts
 // PURPOSE: Master router.
+// LOCATION: backend/src/routes/index.ts
 // ==========================================
+
 import { Router } from "express";
 import authRoutes from "../modules/auth/auth.routes";
 import usersRoutes from "../modules/users/users.routes";
@@ -24,6 +26,7 @@ router.use("/checkin", checkinRoutes);
 router.use("/admin", adminRoutes);
 
 export default router;
+
 // ==========================================
 // END OF FILE: backend/src/routes/index.ts
 // ==========================================

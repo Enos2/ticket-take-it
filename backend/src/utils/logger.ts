@@ -6,12 +6,13 @@ import pino from "pino";
 import { env } from "../config/env";
 
 export const logger = pino({
-  level: env.NODE_ENV === "production" ? "info" : "debug",
+  level: env.NODE_ENV === "test" ? "silent" : env.NODE_ENV === "production" ? "info" : "debug",
   redact: {
     paths: [
       "req.headers.authorization",
       "req.headers.cookie",
       'req.headers["x-payment-signature"]',
+      'req.headers["x-paystack-signature"]',
       'res.headers["set-cookie"]',
       "password",
       "token",

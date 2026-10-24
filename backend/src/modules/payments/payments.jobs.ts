@@ -4,10 +4,17 @@
 // ==========================================
 import { logger } from "../../utils/logger";
 import { reconcileMpesaPayments } from "./mpesa.service";
+import { reconcilePaystackPayments } from "./paystack.service";
 
-// Add each provider's reconcile function here. One failing provider never blocks the others.
+// One failing provider never blocks the others.
 export async function reconcilePayments(): Promise<number> {
   let changed = 0;
+
+  try {
+    changed += await reconcilePaystackPayments();
+  } catch (err) {
+    logger.error({ err }, "Paystack reconciliation failed");
+  }
 
   try {
     changed += await reconcileMpesaPayments();

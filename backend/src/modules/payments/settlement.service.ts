@@ -72,17 +72,20 @@ async function settlePayment(
   });
 }
 
-// Records a payment outside a transaction. If the unique index says this exact event is already recorded, that is fine.
+// Records a payment outside a transaction.
+// Returns false when the unique index says this exact event was already recorded (a duplicate).
 async function recordPayment(
   orderId: string,
   input: WebhookInput,
   status: "SUCCEEDED" | "FAILED",
   extra?: Prisma.InputJsonObject
-) {
+): Promise<boolean> {
   try {
     await settlePayment(prisma, orderId, input, status, extra);
+    return true;
   } catch (err) {
     if (!isUniqueViolation(err)) throw err;
+    return false;
   }
 }
 
@@ -114,8 +117,8 @@ async function processWebhook(input: WebhookInput): Promise<WebhookResult | "ret
   // ---------- FAILED ----------
   if (input.status === "FAILED") {
     // Keep the order open so the buyer can retry until the hold expires.
-    await recordPayment(order.id, input, "FAILED");
-    return "failed_recorded";
+    const created = await recordPayment(order.id, input, "FAILED");
+    return created ? "failed_recorded" : "duplicate";
   }
 
   // ---------- SUCCEEDED ----------
@@ -127,17 +130,21 @@ async function processWebhook(input: WebhookInput): Promise<WebhookResult | "ret
     logger.error(
       `Payment amount mismatch for ${order.reference}: got ${input.amountCents} ${input.currency}, expected ${order.totalCents} ${order.currency}`
     );
-    await recordPayment(order.id, input, "SUCCEEDED", {
+    const created = await recordPayment(order.id, input, "SUCCEEDED", {
       needsRefund: true,
       reason: "amount_mismatch",
       expectedCents: order.totalCents,
     });
-    return "needs_refund";
+    return created ? "needs_refund" : "duplicate";
   }
 
   // Money arrived for an order that is already settled -> double charge, flag it.
   if (order.status === "PAID" || order.status === "REFUNDED") {
-    await recordPayment(order.id, input, "SUCCEEDED", { needsRefund: true, reason: "order_already_settled" });
+    const created = await recordPayment(order.id, input, "SUCCEEDED", {
+      needsRefund: true,
+      reason: "order_already_settled",
+    });
+    if (!created) return "duplicate";
     logger.warn(`Duplicate charge on ${order.reference}. Needs refund (${input.providerRef}).`);
     return "needs_refund";
   }
@@ -185,10 +192,11 @@ async function processWebhook(input: WebhookInput): Promise<WebhookResult | "ret
 
     if (err instanceof StockUnavailableError) {
       // Customer paid but the tickets are gone. Keep the money trail and flag for refund.
-      await recordPayment(order.id, input, "SUCCEEDED", {
+      const created = await recordPayment(order.id, input, "SUCCEEDED", {
         needsRefund: true,
         reason: "stock_unavailable_after_expiry",
       });
+      if (!created) return "duplicate";
       logger.warn(`Late payment on ${order.reference} but stock is gone. Needs refund (${input.providerRef}).`);
       return "needs_refund";
     }

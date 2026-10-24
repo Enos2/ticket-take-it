@@ -11,11 +11,78 @@ import { logger } from "../../utils/logger";
 import { skipTake, Pagination } from "../../utils/pagination";
 import { releaseStock } from "../orders/orders.service";
 import { notifyOrderRefunded } from "../notifications/notifications.service";
+import { refundPaystackPayment } from "./paystack.service";
 
 const isFlagged = (value: unknown) => toJsonObject(value).needsRefund === true;
 
-// Voids the order's tickets, returns stock and puts the real payment in the needs-refund queue.
-// Money is returned by hand for now (M-Pesa). A card provider will refund automatically here later.
+export interface RefundAttempt {
+  paymentId: string;
+  provider: string;
+  providerRef: string | null;
+  amountCents: number;
+  currency: string;
+  outcome: "refunded" | "manual_required" | "failed";
+  detail: string | null;
+}
+
+// Tries to return one payment's money. Paystack is automatic. Everything else needs a human.
+async function attemptProviderRefund(adminId: string, paymentId: string, note?: string): Promise<RefundAttempt> {
+  const payment = await prisma.payment.findUnique({ where: { id: paymentId } });
+  if (!payment) throw ApiError.notFound("Payment not found");
+
+  const base = {
+    paymentId: payment.id,
+    provider: payment.provider,
+    providerRef: payment.providerRef,
+    amountCents: payment.amountCents,
+    currency: payment.currency,
+  };
+
+  if (payment.provider !== "PAYSTACK") {
+    return {
+      ...base,
+      outcome: "manual_required",
+      detail:
+        payment.provider === "MPESA"
+          ? "Return the money through M-Pesa, then mark it resolved."
+          : "Return the money by hand, then mark it resolved.",
+    };
+  }
+
+  try {
+    const refund = await refundPaystackPayment(payment, note);
+
+    await prisma.payment.updateMany({
+      where: { id: payment.id, status: "SUCCEEDED" },
+      data: {
+        status: "REFUNDED",
+        metadata: {
+          ...toJsonObject(payment.metadata),
+          needsRefund: false,
+          refundId: refund.id,
+          refundStatus: refund.status,
+          refundedAt: new Date().toISOString(),
+          refundedBy: adminId,
+        },
+      },
+    });
+
+    return { ...base, outcome: "refunded", detail: `Paystack refund ${refund.status}` };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Refund failed";
+    logger.error({ err }, `Paystack refund failed for payment ${payment.id}`);
+
+    // Stays in the needs-refund queue with the reason, ready to retry.
+    await prisma.payment.updateMany({
+      where: { id: payment.id, status: "SUCCEEDED" },
+      data: { metadata: { ...toJsonObject(payment.metadata), needsRefund: true, lastRefundError: message } },
+    });
+
+    return { ...base, outcome: "failed", detail: message };
+  }
+}
+
+// Voids the order's tickets, returns stock, then returns the money (automatically for Paystack).
 export async function refundOrder(adminId: string, orderId: string, reason?: string) {
   const { order, toReturn } = await prisma.$transaction(async (tx) => {
     const found = await tx.order.findUnique({
@@ -43,6 +110,7 @@ export async function refundOrder(adminId: string, orderId: string, reason?: str
     // The genuine payment. Duplicate charges already flagged are handled in the queue separately.
     const toReturn = found.payments.filter((p) => p.status === "SUCCEEDED" && !isFlagged(p.metadata));
 
+    // Flag first, so the money is tracked even if the process dies before the refund call below.
     for (const p of toReturn) {
       await tx.payment.update({
         where: { id: p.id },
@@ -63,22 +131,35 @@ export async function refundOrder(adminId: string, orderId: string, reason?: str
   });
 
   logger.info(`Order ${order.reference} refunded by admin ${adminId}`);
+
+  const attempts: RefundAttempt[] = [];
+  for (const p of toReturn) {
+    attempts.push(await attemptProviderRefund(adminId, p.id, reason));
+  }
+
   background(notifyOrderRefunded(order.id), "refund email");
 
   return {
     orderId: order.id,
     reference: order.reference,
     status: "REFUNDED" as const,
-    // True until the money has been returned and the payment is marked resolved.
-    manualRefundRequired: toReturn.length > 0,
-    payments: toReturn.map((p) => ({
-      paymentId: p.id,
-      provider: p.provider,
-      providerRef: p.providerRef,
-      amountCents: p.amountCents,
-      currency: p.currency,
-    })),
+    // True until every payment has been returned.
+    manualRefundRequired: attempts.some((a) => a.outcome !== "refunded"),
+    payments: attempts,
   };
+}
+
+// Tries again for a payment in the queue whose automatic refund failed. Paystack payments only.
+export async function retryPaymentRefund(adminId: string, paymentId: string) {
+  const payment = await prisma.payment.findUnique({ where: { id: paymentId } });
+  if (!payment || payment.status !== "SUCCEEDED" || !isFlagged(payment.metadata)) {
+    throw ApiError.notFound("No pending refund found for this payment");
+  }
+  if (payment.provider !== "PAYSTACK") {
+    throw ApiError.badRequest("Only Paystack payments can be refunded automatically. Return the money by hand, then use resolve-refund.");
+  }
+
+  return await attemptProviderRefund(adminId, paymentId);
 }
 
 // Refunds every paid order of a CANCELLED event, 25 per call.
@@ -123,7 +204,8 @@ export async function refundEventOrders(adminId: string, eventId: string, reason
 }
 
 // Payments flagged because money must go back to a customer:
-// order refunds, double charges, late payments after sell-out, amount mismatches.
+// order refunds that need a human, failed automatic refunds, double charges,
+// late payments after sell-out, amount mismatches.
 export async function listPaymentsNeedingRefund(pagination: Pagination) {
   const where: Prisma.PaymentWhereInput = {
     status: "SUCCEEDED",
@@ -151,7 +233,7 @@ export async function listPaymentsNeedingRefund(pagination: Pagination) {
   return { items, total, page: pagination.page, limit: pagination.limit };
 }
 
-// Call after the money has been returned to the customer. `note` is where the reversal receipt goes.
+// Call after the money has been returned by hand. `note` is where the reversal receipt goes.
 export async function resolveRefundPayment(adminId: string, paymentId: string, note?: string) {
   const payment = await prisma.payment.findUnique({ where: { id: paymentId } });
   if (!payment || !isFlagged(payment.metadata)) throw ApiError.notFound("No pending refund found for this payment");

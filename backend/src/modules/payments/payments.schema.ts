@@ -10,8 +10,8 @@ export const paymentOrderParamSchema = z.object({
 
 export const initializePaymentSchema = z
   .object({
-    provider: z.enum(["MPESA", "MOCK"]), // "CARD" will be added with the card provider
-    phone: z.string().trim().min(9).max(20).optional(),
+    provider: z.enum(["PAYSTACK", "MPESA", "MOCK"]),
+    phone: z.string().trim().min(9).max(20).optional(), // only used for direct M-Pesa
   })
   .superRefine((d, ctx) => {
     if (d.provider === "MPESA" && !d.phone) {

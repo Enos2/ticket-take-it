@@ -14,6 +14,8 @@ import { safeEqual } from "../../utils/safeEqual";
 import { initializePaymentSchema, mockWebhookSchema, paymentOrderParamSchema } from "./payments.schema";
 import * as service from "./payments.service";
 import { handleStkCallback } from "./mpesa.service";
+import { handlePaystackEvent } from "./paystack.service";
+import { verifyWebhookSignature } from "./paystack.client";
 import { handleWebhook } from "./settlement.service";
 
 const router = Router();
@@ -51,6 +53,36 @@ router.get("/status/:orderId", authenticate, async (req: Request, res: Response,
   } catch (err) {
     next(err);
   }
+});
+
+// ---- Paystack webhook. Needs the RAW body, which app.ts provides for this exact path. ----
+router.post("/callbacks/paystack", async (req: Request, res: Response) => {
+  if (!Buffer.isBuffer(req.body)) {
+    logger.warn("Paystack webhook body was not raw. Check the express.raw() line in app.ts.");
+    return res.status(400).json({ success: false, message: "Invalid request" });
+  }
+
+  const signature = req.header("x-paystack-signature");
+  if (!env.paystack || !signature || !verifyWebhookSignature(req.body, signature)) {
+    return res.status(401).json({ success: false, message: "Invalid signature" });
+  }
+
+  let event: unknown;
+  try {
+    event = JSON.parse(req.body.toString("utf8"));
+  } catch {
+    return res.status(400).json({ success: false, message: "Invalid JSON" });
+  }
+
+  try {
+    await handlePaystackEvent(event);
+  } catch (err) {
+    // A non-200 answer makes Paystack deliver the event again later.
+    logger.error({ err }, "Paystack webhook processing failed");
+    return res.status(500).json({ success: false });
+  }
+
+  return res.json({ received: true });
 });
 
 // ---- Safaricom callback. Protected by the secret in the URL, and success is double-checked with Safaricom. ----

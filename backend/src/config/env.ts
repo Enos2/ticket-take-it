@@ -42,7 +42,7 @@ const envSchema = z
     BCRYPT_ROUNDS: z.coerce.number().int().min(10).max(15).default(12),
 
     // Email
-    APP_URL: z.string().url().default("http://localhost:5173"), // frontend base URL used in email links
+    APP_URL: z.string().url().default("http://localhost:5173"), // frontend base URL used in email links and payment redirects
     EMAIL_FROM: z.string().min(3).default("Ticket Take It <onboarding@resend.dev>"),
     RESEND_API_KEY: optionalString,
     REQUIRE_EMAIL_VERIFICATION: z.enum(["true", "false"]).optional(), // defaults to true in production
@@ -54,7 +54,10 @@ const envSchema = z
     // Public https address of THIS API. Safaricom calls back to it, so localhost won't work (use a tunnel).
     PUBLIC_API_URL: optionalString,
 
-    // M-Pesa (Safaricom Daraja). Leave all blank to disable.
+    // Paystack: hosted checkout for cards and mobile money. Leave blank to disable.
+    PAYSTACK_SECRET_KEY: optionalString,
+
+    // M-Pesa direct (Safaricom Daraja). Leave all blank to disable.
     MPESA_ENV: z.enum(["sandbox", "production"]).default("sandbox"),
     MPESA_CONSUMER_KEY: optionalString,
     MPESA_CONSUMER_SECRET: optionalString,
@@ -73,6 +76,11 @@ const envSchema = z
     }
     if (v.ENABLE_MOCK_PAYMENTS === "true" && !v.PAYMENT_WEBHOOK_SECRET) {
       add("PAYMENT_WEBHOOK_SECRET", "Required when ENABLE_MOCK_PAYMENTS is true");
+    }
+
+    // ---- Paystack ----
+    if (v.PAYSTACK_SECRET_KEY && !/^sk_(test|live)_/.test(v.PAYSTACK_SECRET_KEY)) {
+      add("PAYSTACK_SECRET_KEY", "Must start with sk_test_ or sk_live_ (use the SECRET key, not the public one)");
     }
 
     // ---- M-Pesa: all or nothing ----
@@ -153,12 +161,20 @@ const mpesa =
       }
     : null;
 
+const paystack = data.PAYSTACK_SECRET_KEY
+  ? {
+      secretKey: data.PAYSTACK_SECRET_KEY,
+      mode: data.PAYSTACK_SECRET_KEY.startsWith("sk_live_") ? ("live" as const) : ("test" as const),
+    }
+  : null;
+
 const mockEnabled = data.ENABLE_MOCK_PAYMENTS
   ? data.ENABLE_MOCK_PAYMENTS === "true"
   : data.NODE_ENV !== "production" && Boolean(data.PAYMENT_WEBHOOK_SECRET);
 
 if (data.NODE_ENV === "production") {
-  if (!mpesa) console.warn("[config] No payment provider is configured. Paid orders cannot be completed.");
+  if (!mpesa && !paystack) console.warn("[config] No payment provider is configured. Paid orders cannot be completed.");
+  if (paystack?.mode === "test") console.warn("[config] Paystack is using a TEST key in production. No real money will move.");
   if (mpesa?.env === "sandbox") console.warn("[config] M-Pesa is in SANDBOX mode in production. No real money will move.");
   if (mockEnabled) console.warn("[config] Mock payments are ENABLED in production. Anyone holding PAYMENT_WEBHOOK_SECRET can mark orders paid.");
 }
@@ -174,6 +190,7 @@ export const env = {
       : data.NODE_ENV === "production",
   ENABLE_MOCK_PAYMENTS: mockEnabled,
   mpesa, // null when M-Pesa is not configured
+  paystack, // null when Paystack is not configured
 };
 // ==========================================
 // END OF FILE: backend/src/config/env.ts
