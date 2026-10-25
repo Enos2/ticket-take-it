@@ -1,83 +1,119 @@
 // ==========================================
 // FILE: frontend/src/pages/public/EventDetail.tsx
-// PURPOSE: Shows full event details and ticket selection.
+// PURPOSE: One event: details and ticket selection.
 // ==========================================
-import { useEffect, useState } from "react";
-import { useParams, useNavigate } from "react-router-dom";
-import api from "../../lib/api";
+import { useQuery } from "@tanstack/react-query";
+import { Link, useParams } from "react-router-dom";
+import { ArrowLeft, CalendarDays, CalendarX2, MapPin } from "lucide-react";
+import TicketPicker from "../../components/TicketPicker";
+import Alert from "../../components/ui/Alert";
+import Card from "../../components/ui/Card";
+import EmptyState from "../../components/ui/EmptyState";
+import { PageSpinner } from "../../components/ui/Spinner";
+import { buttonClasses } from "../../components/ui/styles";
+import { ApiRequestError, api, errorMessage } from "../../lib/api";
+import { formatDate, formatTime } from "../../lib/format";
+import { useTitle } from "../../lib/useTitle";
+import type { EventSummary } from "../../lib/types";
 
 export default function EventDetail() {
-  const { id } = useParams();
-  const navigate = useNavigate();
-  const [event, setEvent] = useState<any>(null);
+  const { slug } = useParams<{ slug: string }>();
 
-  useEffect(() => {
-    // In a real app, we'd fetch a single event endpoint. 
-    // For now, we'll fetch all and find the one we need.
-    api.get("/events").then((res) => {
-      const found = res.data.data.find((e: any) => e.id === id);
-      setEvent(found);
-    });
-  }, [id]);
+  const query = useQuery({
+    queryKey: ["event", slug],
+    queryFn: () => api.get<EventSummary>(`/events/${slug}`),
+    enabled: Boolean(slug),
+  });
 
-  if (!event) return <div className="text-center mt-20 text-white">Loading...</div>;
+  const event = query.data;
+  useTitle(event?.title);
+
+  if (query.isPending) return <PageSpinner />;
+
+  if (query.isError || !event) {
+    const notFound = query.error instanceof ApiRequestError && query.error.status === 404;
+    return (
+      <div className="mx-auto max-w-3xl px-4 py-16 sm:px-6">
+        {notFound ? (
+          <EmptyState
+            icon={<CalendarX2 className="size-6" aria-hidden="true" />}
+            title="Event not found"
+            text="It may have ended, or the link is wrong."
+            action={
+              <Link to="/events" className={buttonClasses("secondary")}>
+                Back to events
+              </Link>
+            }
+          />
+        ) : (
+          <Alert>{errorMessage(query.error)}</Alert>
+        )}
+      </div>
+    );
+  }
+
+  const tickets = event.ticketTypes.filter((t) => t.isActive);
 
   return (
-    <div className="max-w-7xl mx-auto p-6 mt-6">
-      {/* Banner */}
-      <div className="w-full h-100 rounded-2xl overflow-hidden relative mb-8 border border-dark-700">
-        <img src={event.bannerUrl || "https://images.unsplash.com/photo-1501281668745-f7f57925c3b4"} alt={event.title} className="w-full h-full object-cover" />
-        <div className="absolute inset-0 bg-linear-to-t from-dark-900 to-transparent"></div>
-        <div className="absolute bottom-8 left-8">
-          <span className="bg-brand-red text-white text-xs font-bold px-3 py-1 rounded mb-4 inline-block">MUSIC</span>
-          <h1 className="text-5xl font-black text-white">{event.title}</h1>
-        </div>
+    <article className="mx-auto max-w-6xl px-4 py-8 sm:px-6 sm:py-12">
+      <Link to="/events" className="mb-6 inline-flex items-center gap-1.5 text-sm text-muted transition-colors hover:text-fg">
+        <ArrowLeft className="size-4" aria-hidden="true" />
+        All events
+      </Link>
+
+      {/* banner */}
+      <div className="relative mb-8 aspect-21/9 overflow-hidden rounded-2xl border border-line bg-panel-2">
+        {event.bannerUrl ? (
+          <img src={event.bannerUrl} alt="" className="size-full object-cover" />
+        ) : (
+          <div className="flex size-full items-center justify-center bg-[radial-gradient(circle_at_25%_25%,rgba(227,38,54,0.35),transparent_60%),radial-gradient(circle_at_80%_80%,rgba(201,164,92,0.25),transparent_55%)]">
+            <CalendarDays className="size-14 text-gold/70" aria-hidden="true" />
+          </div>
+        )}
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-10">
-        {/* Left Side: Details */}
+      <div className="grid gap-8 lg:grid-cols-3">
         <div className="lg:col-span-2">
-          <div className="flex gap-6 text-gray-300 mb-8 border-b border-dark-700 pb-6">
-            <div className="flex items-center gap-2"><span className="text-brand-red">📅</span> {new Date(event.startsAt).toLocaleString()}</div>
-            <div className="flex items-center gap-2"><span className="text-brand-red">📍</span> {event.venue}, {event.city}</div>
-          </div>
-          
-          <h2 className="text-2xl font-bold text-white mb-4">About this event</h2>
-          <p className="text-gray-400 leading-relaxed mb-8">{event.description}</p>
+          <h1 className="text-3xl leading-tight font-extrabold text-fg sm:text-4xl">{event.title}</h1>
+
+          <h2 className="mt-8 mb-2 text-sm font-semibold tracking-widest text-gold uppercase">About this event</h2>
+          <p className="text-base leading-relaxed whitespace-pre-line text-muted">{event.description}</p>
+
+          <h2 className="mt-10 mb-4 text-sm font-semibold tracking-widest text-gold uppercase">Tickets</h2>
+          {tickets.length === 0 ? (
+            <Card className="p-6 text-sm text-muted">Tickets for this event are not on sale yet.</Card>
+          ) : (
+            <TicketPicker event={event} tickets={tickets} />
+          )}
         </div>
 
-        {/* Right Side: Ticket Box */}
-        <div className="lg:col-span-1">
-          <div className="bg-dark-800 border border-dark-700 rounded-2xl p-6 sticky top-24">
-            <h3 className="text-xl font-bold text-white mb-6">Select Ticket Type</h3>
-            
-            <div className="space-y-4 mb-8">
-              {event.ticketTypes?.map((ticket: any) => (
-                <div key={ticket.id} className="border border-dark-700 bg-dark-900 rounded-xl p-4 hover:border-brand-red cursor-pointer transition">
-                  <div className="flex justify-between items-center mb-2">
-                    <span className="font-bold text-white">{ticket.name}</span>
-                    <span className="text-brand-red font-bold">KSh {(ticket.priceCents / 100).toLocaleString()}</span>
-                  </div>
-                  <p className="text-xs text-gray-400">{ticket.tier} • {ticket.quantity - ticket.sold} tickets left</p>
-                </div>
-              ))}
+        {/* details */}
+        <aside>
+          <Card className="space-y-5 p-6 lg:sticky lg:top-24">
+            <div className="flex gap-3">
+              <CalendarDays className="mt-0.5 size-5 shrink-0 text-gold" aria-hidden="true" />
+              <div>
+                <p className="font-semibold text-fg">{formatDate(event.startsAt)}</p>
+                <p className="text-sm text-muted">
+                  {formatTime(event.startsAt)} to {formatTime(event.endsAt)} (Nairobi time)
+                </p>
+              </div>
             </div>
-
-            <button 
-              onClick={() => navigate("/login")} // Will navigate to checkout later
-              className="w-full bg-brand-red text-white py-4 rounded-xl font-bold text-lg hover:bg-brand-hover transition shadow-[0_0_15px_rgba(239,68,68,0.3)]"
-            >
-              Proceed to Payment
-            </button>
-            <p className="text-center text-xs text-gray-500 mt-4">🔒 Secured payment powered by Ticket Take It</p>
-          </div>
-        </div>
+            <div className="flex gap-3">
+              <MapPin className="mt-0.5 size-5 shrink-0 text-gold" aria-hidden="true" />
+              <div>
+                <p className="font-semibold text-fg">{event.venue}</p>
+                <p className="text-sm text-muted">
+                  {event.city}, {event.country}
+                </p>
+              </div>
+            </div>
+          </Card>
+        </aside>
       </div>
-    </div>
+    </article>
   );
 }
 // ==========================================
 // END OF FILE: frontend/src/pages/public/EventDetail.tsx
-// LOCATION: frontend/src/pages/public/EventDetail.tsx
-// LAST UPDATED: October 20, 2026
 // ==========================================

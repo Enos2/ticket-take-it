@@ -17,6 +17,7 @@ router.get("/me", controller.getMe); // lets the frontend show "pending approval
 
 router.get("/orders", authorize("SELLER", "ADMIN"), controller.getOrders);
 router.get("/events", authorize("SELLER"), controller.getEvents);
+router.get("/events/:eventId", authorize("SELLER", "ADMIN"), controller.getEvent);
 router.get("/events/:eventId/summary", authorize("SELLER", "ADMIN"), controller.getEventSummary);
 router.get("/events/:eventId/attendees", authorize("SELLER", "ADMIN"), controller.getEventAttendees);
 

@@ -1,63 +1,148 @@
 // ==========================================
 // FILE: frontend/src/components/Navbar.tsx
-// PURPOSE: Navbar with oversized logo that doesn't stretch the height.
+// PURPOSE: Top navigation.
 // ==========================================
-import { Link } from "react-router-dom";
-import { useAuthStore } from "../lib/authStore";
-import { Search, Heart } from "lucide-react";
+import { useState } from "react";
+import { Link, NavLink } from "react-router-dom";
+import { LogOut, Menu, Ticket, X } from "lucide-react";
+import { cx } from "../lib/cx";
+import { useAuth } from "../lib/authStore";
+import Button from "./ui/Button";
+import { buttonClasses } from "./ui/styles";
+
+const linkClass = ({ isActive }: { isActive: boolean }) =>
+  cx("rounded-md px-3 py-2 text-sm font-medium transition-colors", isActive ? "text-gold" : "text-muted hover:text-fg");
 
 export default function Navbar() {
-  const { user, logout } = useAuthStore();
+  const user = useAuth((s) => s.user);
+  const logout = useAuth((s) => s.logout);
+  const [open, setOpen] = useState(false);
+
+  const close = () => setOpen(false);
+  const firstName = user?.fullName.split(" ")[0];
+
+  // Buyers see "Sell tickets", sellers see their dashboard and admins see the admin area.
+  const roleLink =
+    user?.role === "ADMIN"
+      ? { to: "/admin", label: "Admin" }
+      : user?.role === "SELLER"
+        ? { to: "/seller", label: "Seller dashboard" }
+        : user?.role === "USER"
+          ? { to: "/seller/apply", label: "Sell tickets" }
+          : null;
 
   return (
-    <nav className="bg-dark-base border-b border-dark-surface sticky top-0 z-50">
-      {/* Fixed height for the navbar so the logo doesn't stretch it */}
-      <div className="max-w-7xl mx-auto px-6 h-20 flex justify-between items-center relative">
-        
-        {/* Logo Wrapper */}
-        <Link to="/" className="relative flex items-center">
-          {/* 
-            By making the image absolute, it no longer forces the navbar to grow. 
-            We set it to height: 140px (h-36). 
-            We use -translate-y-1/2 and top-1/2 to keep it perfectly centered vertically.
-          */}
-          <img 
-            src="/logo-full.png" 
-            alt="Ticket Take It" 
-            className="absolute top-1/2 -translate-y-1/2 h-30 w-auto object-contain pointer-events-none" 
-          />
-          {/* Invisible spacer so the flexbox knows how much horizontal space the logo takes up */}
-          <div className="w-48 h-10"></div> 
+    <header className="sticky top-0 z-40 border-b border-line bg-ink/85 backdrop-blur">
+      <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-4 sm:px-6">
+        <Link to="/" onClick={close} className="flex items-center gap-2">
+          <Ticket className="size-6 text-brand" aria-hidden="true" />
+          <span className="text-sm font-extrabold tracking-[0.18em] text-fg uppercase">
+            Ticket <span className="text-gold">Take It</span>
+          </span>
         </Link>
-        
-        <div className="hidden md:flex space-x-8 text-sm font-medium text-text-muted z-10">
-          <Link to="/" className="hover:text-text-main transition">Discover</Link>
-          <Link to="/events" className="hover:text-text-main transition">Events</Link>
-          <Link to="/" className="hover:text-text-main transition">For Organizers</Link>
-        </div>
 
-        <div className="flex items-center space-x-6 text-sm font-medium z-10">
-          <button className="text-text-muted hover:text-text-main transition"><Search size={20} /></button>
-          <button className="text-text-muted hover:text-text-main transition"><Heart size={20} /></button>
-          
+        {/* desktop */}
+        <nav className="hidden items-center gap-1 md:flex" aria-label="Main">
+          <NavLink to="/events" className={linkClass}>
+            Events
+          </NavLink>
+          {user ? (
+            <NavLink to="/account/tickets" className={linkClass}>
+              My tickets
+            </NavLink>
+          ) : null}
+          {roleLink ? (
+            <NavLink to={roleLink.to} className={linkClass}>
+              {roleLink.label}
+            </NavLink>
+          ) : null}
+        </nav>
+
+        <div className="hidden items-center gap-3 md:flex">
           {user ? (
             <>
-              <Link to="/dashboard" className="text-text-main hover:text-brand-red transition">My Tickets</Link>
-              <button onClick={logout} className="text-text-muted hover:text-text-main transition">Logout</button>
+              <span className="text-sm text-muted">
+                Hi, <span className="font-semibold text-fg">{firstName}</span>
+              </span>
+              <Button variant="ghost" size="sm" icon={<LogOut className="size-4" aria-hidden="true" />} onClick={() => void logout()}>
+                Sign out
+              </Button>
             </>
           ) : (
             <>
-              <Link to="/login" className="text-text-main hover:text-brand-red transition">Sign in</Link>
-              <Link to="/register" className="bg-brand-red text-white px-5 py-2.5 rounded-md hover:bg-brand-red/90 transition font-bold">Create Account</Link>
+              <Link to="/login" className={buttonClasses("ghost", "sm")}>
+                Sign in
+              </Link>
+              <Link to="/register" className={buttonClasses("primary", "sm")}>
+                Create account
+              </Link>
             </>
           )}
         </div>
+
+        {/* mobile toggle */}
+        <button
+          type="button"
+          className="flex size-10 items-center justify-center rounded-lg text-muted hover:bg-panel hover:text-fg md:hidden"
+          onClick={() => setOpen((v) => !v)}
+          aria-expanded={open}
+          aria-label={open ? "Close menu" : "Open menu"}
+        >
+          {open ? <X className="size-5" aria-hidden="true" /> : <Menu className="size-5" aria-hidden="true" />}
+        </button>
       </div>
-    </nav>
+
+      {/* mobile panel */}
+      {open ? (
+        <div className="border-t border-line bg-ink px-4 pb-4 md:hidden">
+          <nav className="flex flex-col py-2" aria-label="Main">
+            <NavLink to="/events" className={linkClass} onClick={close}>
+              Events
+            </NavLink>
+            {user ? (
+              <>
+                <NavLink to="/account/tickets" className={linkClass} onClick={close}>
+                  My tickets
+                </NavLink>
+                <NavLink to="/account/orders" className={linkClass} onClick={close}>
+                  My orders
+                </NavLink>
+              </>
+            ) : null}
+            {roleLink ? (
+              <NavLink to={roleLink.to} className={linkClass} onClick={close}>
+                {roleLink.label}
+              </NavLink>
+            ) : null}
+          </nav>
+          <div className="flex flex-col gap-2 pt-2">
+            {user ? (
+              <Button
+                variant="secondary"
+                icon={<LogOut className="size-4" aria-hidden="true" />}
+                onClick={() => {
+                  close();
+                  void logout();
+                }}
+              >
+                Sign out ({firstName})
+              </Button>
+            ) : (
+              <>
+                <Link to="/login" onClick={close} className={buttonClasses("secondary")}>
+                  Sign in
+                </Link>
+                <Link to="/register" onClick={close} className={buttonClasses("primary")}>
+                  Create account
+                </Link>
+              </>
+            )}
+          </div>
+        </div>
+      ) : null}
+    </header>
   );
 }
 // ==========================================
 // END OF FILE: frontend/src/components/Navbar.tsx
-// LOCATION: frontend/src/components/Navbar.tsx
-// LAST UPDATED: October 21, 2026
 // ==========================================

@@ -11,27 +11,48 @@ import { notifySellerStatusChanged } from "../notifications/notifications.servic
 
 type SellerStatus = SellerProfile["status"];
 
-export async function getAllUsers(pagination: Pagination) {
+const insensitive = Prisma.QueryMode.insensitive;
+
+export async function getAllUsers(pagination: Pagination, q?: string) {
+  const where: Prisma.UserWhereInput = q
+    ? { OR: [{ email: { contains: q, mode: insensitive } }, { fullName: { contains: q, mode: insensitive } }] }
+    : {};
+
   const [items, total] = await prisma.$transaction([
     prisma.user.findMany({
+      where,
       select: { id: true, email: true, fullName: true, role: true, isActive: true, createdAt: true },
       orderBy: { createdAt: "desc" },
       ...skipTake(pagination),
     }),
-    prisma.user.count(),
+    prisma.user.count({ where }),
   ]);
 
   return { items, total, page: pagination.page, limit: pagination.limit };
 }
 
-export async function getAllSellers(pagination: Pagination) {
+export async function getAllSellers(pagination: Pagination, status?: SellerStatus) {
+  const where: Prisma.SellerProfileWhereInput = status ? { status } : {};
+
   const [items, total] = await prisma.$transaction([
     prisma.sellerProfile.findMany({
-      include: { user: { select: { email: true, fullName: true } } },
+      where,
+      // Payout details are deliberately not sent to the browser.
+      select: {
+        id: true,
+        userId: true,
+        businessName: true,
+        businessEmail: true,
+        businessPhone: true,
+        status: true,
+        approvedAt: true,
+        createdAt: true,
+        user: { select: { email: true, fullName: true } },
+      },
       orderBy: { createdAt: "desc" },
       ...skipTake(pagination),
     }),
-    prisma.sellerProfile.count(),
+    prisma.sellerProfile.count({ where }),
   ]);
 
   return { items, total, page: pagination.page, limit: pagination.limit };
@@ -100,12 +121,18 @@ export async function getAllEvents(pagination: Pagination, status?: EventStatus)
 
 export async function getAllOrders(
   pagination: Pagination,
-  filters: { status?: OrderStatus; eventId?: string; userId?: string }
+  filters: { status?: OrderStatus; eventId?: string; userId?: string; q?: string }
 ) {
   const where: Prisma.OrderWhereInput = {
     ...(filters.status && { status: filters.status }),
     ...(filters.userId && { userId: filters.userId }),
     ...(filters.eventId && { items: { some: { ticketType: { eventId: filters.eventId } } } }),
+    ...(filters.q && {
+      OR: [
+        { reference: { contains: filters.q, mode: insensitive } },
+        { user: { email: { contains: filters.q, mode: insensitive } } },
+      ],
+    }),
   };
 
   const [items, total] = await prisma.$transaction([

@@ -55,6 +55,17 @@ export async function getEvents(req: Request, res: Response, next: NextFunction)
   }
 }
 
+export async function getEvent(req: Request, res: Response, next: NextFunction) {
+  try {
+    if (!req.user) throw ApiError.unauthorized();
+    const { eventId } = parse(sellerEventParamSchema, req.params);
+    const data = await service.getSellerEvent(req.user.sub, req.user.role, eventId);
+    res.json({ success: true, data });
+  } catch (err) {
+    next(err);
+  }
+}
+
 export async function getEventSummary(req: Request, res: Response, next: NextFunction) {
   try {
     if (!req.user) throw ApiError.unauthorized();

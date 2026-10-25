@@ -1,60 +1,173 @@
 // ==========================================
 // FILE: frontend/src/pages/seller/SellerDashboard.tsx
-// PURPOSE: Main dashboard for Event Organizers.
+// PURPOSE: The seller's events, with a status filter.
 // ==========================================
+import { useState } from "react";
+import { useInfiniteQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
-import { PlusCircle, TrendingUp, Users, DollarSign } from "lucide-react";
+import { CalendarDays, ChevronRight, MapPin, Plus } from "lucide-react";
+import Alert from "../../components/ui/Alert";
+import Badge from "../../components/ui/Badge";
+import Button from "../../components/ui/Button";
+import EmptyState from "../../components/ui/EmptyState";
+import { PageSpinner } from "../../components/ui/Spinner";
+import { buttonClasses } from "../../components/ui/styles";
+import { api, errorMessage } from "../../lib/api";
+import { cx } from "../../lib/cx";
+import { formatDateTime } from "../../lib/format";
+import { displayStatus } from "../../lib/seller";
+import { useTitle } from "../../lib/useTitle";
+import type { EventStatus, SellerEventListItem } from "../../lib/types";
+
+const PAGE_SIZE = 12;
+
+const FILTERS: { label: string; value: "" | EventStatus }[] = [
+  { label: "All", value: "" },
+  { label: "Drafts", value: "DRAFT" },
+  { label: "On sale", value: "PUBLISHED" },
+  { label: "Cancelled", value: "CANCELLED" },
+];
+
+function EventRow({ event }: { event: SellerEventListItem }) {
+  const status = displayStatus(event);
+  const capacity = event.ticketTypes.reduce((sum, t) => sum + t.quantity, 0);
+  const taken = event.ticketTypes.reduce((sum, t) => sum + t.sold, 0);
+  const percent = capacity > 0 ? Math.min(100, Math.round((taken / capacity) * 100)) : 0;
+
+  return (
+    <li>
+      <Link
+        to={`/seller/events/${event.id}`}
+        className="group flex items-center gap-4 rounded-2xl border border-line bg-panel p-5 transition-colors hover:border-gold/60"
+      >
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <h2 className="truncate font-semibold text-fg">{event.title}</h2>
+            <Badge tone={status.tone}>{status.label}</Badge>
+          </div>
+
+          <ul className="mt-2 flex flex-wrap gap-x-5 gap-y-1 text-sm text-muted">
+            <li className="flex items-center gap-1.5">
+              <CalendarDays className="size-4 text-gold" aria-hidden="true" />
+              {formatDateTime(event.startsAt)}
+            </li>
+            <li className="flex items-center gap-1.5">
+              <MapPin className="size-4 text-gold" aria-hidden="true" />
+              {event.venue}, {event.city}
+            </li>
+          </ul>
+
+          {event.ticketTypes.length === 0 ? (
+            <p className="mt-3 text-sm text-gold">No tickets yet. Add a ticket type to get started.</p>
+          ) : (
+            <div className="mt-3 max-w-md">
+              <div className="mb-1 flex justify-between text-xs text-muted">
+                <span>Tickets sold or held</span>
+                <span className="tabular-nums">
+                  {taken} of {capacity}
+                </span>
+              </div>
+              <div
+                className="h-1.5 overflow-hidden rounded-full bg-ink"
+                role="progressbar"
+                aria-valuenow={percent}
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-label="Tickets sold or held"
+              >
+                <div className="h-full rounded-full bg-gold" style={{ width: `${percent}%` }} />
+              </div>
+            </div>
+          )}
+        </div>
+        <ChevronRight className="size-5 shrink-0 text-muted transition-colors group-hover:text-gold" aria-hidden="true" />
+      </Link>
+    </li>
+  );
+}
 
 export default function SellerDashboard() {
+  useTitle("My events");
+  const [filter, setFilter] = useState<"" | EventStatus>("");
+
+  const query = useInfiniteQuery({
+    queryKey: ["seller-events", filter],
+    initialPageParam: 1,
+    queryFn: ({ pageParam }) =>
+      api.list<SellerEventListItem>(`/sellers/events?page=${pageParam}&limit=${PAGE_SIZE}${filter ? `&status=${filter}` : ""}`),
+    getNextPageParam: (last) => (last.meta.page * last.meta.limit < last.meta.total ? last.meta.page + 1 : undefined),
+  });
+
+  const events = query.data?.pages.flatMap((page) => page.items) ?? [];
+
   return (
     <div>
-      <div className="flex justify-between items-center mb-8">
-        <div>
-          <h2 className="text-2xl font-bold text-text-main">Dashboard Overview</h2>
-          <p className="text-text-muted text-sm mt-1">Track your sales and performance.</p>
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
+        <div className="flex flex-wrap gap-2" role="group" aria-label="Filter events">
+          {FILTERS.map((f) => (
+            <button
+              key={f.label}
+              type="button"
+              onClick={() => setFilter(f.value)}
+              aria-pressed={filter === f.value}
+              className={cx(
+                "rounded-full border px-4 py-1.5 text-sm font-medium transition-colors",
+                filter === f.value ? "border-gold bg-gold/10 text-gold" : "border-line text-muted hover:text-fg"
+              )}
+            >
+              {f.label}
+            </button>
+          ))}
         </div>
-        <Link to="/seller/create-event" className="bg-brand-red text-white px-5 py-2.5 rounded-md font-bold hover:bg-brand-red/90 transition flex items-center gap-2">
-          <PlusCircle size={18} /> Create Event
+
+        <Link to="/seller/events/new" className={buttonClasses("primary")}>
+          <Plus className="size-4" aria-hidden="true" />
+          Create event
         </Link>
       </div>
 
-      {/* Stats Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-        <div className="bg-dark-surface border border-dark-surface/50 rounded-xl p-6">
-          <div className="flex justify-between items-start mb-4">
-            <div>
-              <p className="text-text-muted text-sm font-medium">Total Sales</p>
-              <h3 className="text-2xl font-bold text-text-main mt-1">KSh 0</h3>
-            </div>
-            <div className="p-2 bg-brand-gold/10 rounded-lg"><DollarSign size={20} className="text-brand-gold" /></div>
-          </div>
-          <p className="text-xs text-brand-red flex items-center gap-1"><TrendingUp size={14} /> +0% from last month</p>
+      {query.isPending ? (
+        <PageSpinner />
+      ) : query.isError ? (
+        <div className="space-y-4">
+          <Alert>{errorMessage(query.error)}</Alert>
+          <Button variant="secondary" onClick={() => void query.refetch()}>
+            Try again
+          </Button>
         </div>
+      ) : events.length === 0 ? (
+        <EmptyState
+          icon={<CalendarDays className="size-6" aria-hidden="true" />}
+          title={filter ? "No events match this filter" : "You haven't created an event yet"}
+          text={filter ? undefined : "Create your first event, add tickets, then publish it so people can buy."}
+          action={
+            filter ? undefined : (
+              <Link to="/seller/events/new" className={buttonClasses("primary")}>
+                Create your first event
+              </Link>
+            )
+          }
+        />
+      ) : (
+        <>
+          <ul className="space-y-3">
+            {events.map((event) => (
+              <EventRow key={event.id} event={event} />
+            ))}
+          </ul>
 
-        <div className="bg-dark-surface border border-dark-surface/50 rounded-xl p-6">
-          <div className="flex justify-between items-start mb-4">
-            <div>
-              <p className="text-text-muted text-sm font-medium">Tickets Sold</p>
-              <h3 className="text-2xl font-bold text-text-main mt-1">0</h3>
+          {query.hasNextPage ? (
+            <div className="mt-8 flex justify-center">
+              <Button variant="secondary" loading={query.isFetchingNextPage} onClick={() => void query.fetchNextPage()}>
+                Load more
+              </Button>
             </div>
-            <div className="p-2 bg-brand-gold/10 rounded-lg"><Users size={20} className="text-brand-gold" /></div>
-          </div>
-          <p className="text-xs text-text-muted">Across all events</p>
-        </div>
-      </div>
-
-      {/* Placeholder for Chart */}
-      <div className="bg-dark-surface border border-dark-surface/50 rounded-xl p-6 h-80 flex flex-col">
-        <h3 className="text-lg font-bold text-text-main mb-6">Sales Overview</h3>
-        <div className="flex-1 border border-dark-surface/50 border-dashed rounded-lg flex items-center justify-center">
-          <p className="text-text-muted text-sm">Chart integration will go here</p>
-        </div>
-      </div>
+          ) : null}
+        </>
+      )}
     </div>
   );
 }
 // ==========================================
 // END OF FILE: frontend/src/pages/seller/SellerDashboard.tsx
-// LOCATION: frontend/src/pages/seller/SellerDashboard.tsx
-// LAST UPDATED: October 20, 2026
 // ==========================================

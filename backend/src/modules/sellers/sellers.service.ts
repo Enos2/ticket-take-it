@@ -123,6 +123,16 @@ export async function getSellerEvents(userId: string, query: SellerEventsQuery) 
   return { items, total, page: query.page, limit: query.limit };
 }
 
+// One event with every field of every ticket type, so the seller can edit it. Drafts are included.
+export async function getSellerEvent(userId: string, role: Role, eventId: string) {
+  await getManagedEvent(userId, role, eventId);
+
+  return await prisma.event.findUniqueOrThrow({
+    where: { id: eventId },
+    include: { ticketTypes: { orderBy: [{ priceCents: "asc" }, { createdAt: "asc" }] } },
+  });
+}
+
 // Sales and door numbers for one event.
 export async function getEventSummary(userId: string, role: Role, eventId: string) {
   const event = await getManagedEvent(userId, role, eventId);

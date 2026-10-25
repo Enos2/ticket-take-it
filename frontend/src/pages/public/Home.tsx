@@ -1,73 +1,116 @@
 // ==========================================
 // FILE: frontend/src/pages/public/Home.tsx
-// PURPOSE: Main landing page with a massive hero logo.
+// PURPOSE: Landing page: hero, the next few events and what makes the platform different.
 // ==========================================
+import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
-import { ArrowRight } from "lucide-react";
-import Events from "./Events";
+import { ArrowRight, BadgeCheck, QrCode, ShieldCheck } from "lucide-react";
+import EventGrid from "../../components/EventGrid";
+import { buttonClasses } from "../../components/ui/styles";
+import { api } from "../../lib/api";
+import { useTitle } from "../../lib/useTitle";
+import type { EventSummary } from "../../lib/types";
+
+const HIGHLIGHTS = [
+  {
+    icon: ShieldCheck,
+    title: "Paid securely",
+    text: "Pay by card or M-Pesa. Every payment is confirmed with the payment provider before your tickets are issued.",
+  },
+  {
+    icon: QrCode,
+    title: "Tickets on your phone",
+    text: "Each ticket has its own QR code. Show it at the door and walk in.",
+  },
+  {
+    icon: BadgeCheck,
+    title: "No double bookings",
+    text: "When the last ticket is gone, it is gone. Nobody pays for a ticket that does not exist.",
+  },
+];
 
 export default function Home() {
+  useTitle();
+
+  const query = useQuery({
+    queryKey: ["events", "preview"],
+    queryFn: () => api.list<EventSummary>("/events?page=1&limit=6"),
+  });
+
+  const events = query.data?.items ?? [];
+  const hasMore = (query.data?.meta.total ?? 0) > events.length;
+
   return (
-    <div className="bg-dark-base min-h-screen overflow-hidden">
-      {/* Hero Section */}
-      <section className="relative w-full max-w-7xl mx-auto px-6 pt-20 pb-16 flex flex-col md:flex-row items-center justify-between">
-        
-        {/* Left: Text */}
-        <div className="md:w-1/2 z-10 mb-12 md:mb-0">
-          <div className="flex items-center gap-3 mb-6">
-            <div className="h-px w-12 bg-brand-red"></div>
-            <span className="text-brand-gold text-xs font-bold tracking-[0.2em] uppercase">Your World, Your Moment</span>
-          </div>
-          
-          <h1 className="text-5xl md:text-7xl font-black text-text-main leading-[1.1] mb-6">
-            Make room for <br />
-            something <br />
-            <span className="text-transparent bg-clip-text bg-linear-to-r from-brand-red to-brand-red/70">unforgettable.</span>
+    <>
+      {/* hero */}
+      <section className="relative overflow-hidden border-b border-line">
+        <div
+          aria-hidden="true"
+          className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_left,rgba(227,38,54,0.28),transparent_55%),radial-gradient(ellipse_at_bottom_right,rgba(201,164,92,0.18),transparent_50%)]"
+        />
+        <div className="relative mx-auto max-w-6xl px-4 py-20 sm:px-6 sm:py-28">
+          <p className="mb-4 text-sm font-semibold tracking-[0.25em] text-gold uppercase">Live events across Kenya</p>
+          <h1 className="max-w-3xl text-4xl leading-tight font-extrabold text-fg sm:text-6xl">
+            Your World. <span className="text-brand">Your Moment.</span>
           </h1>
-          
-          <p className="text-text-muted text-lg max-w-lg mb-10 leading-relaxed">
-            Find the events worth leaving home for. From once-in-a-lifetime to the discoveries that become your next story.
+          <p className="mt-5 max-w-xl text-lg text-muted">
+            Find what is happening near you and get your tickets in minutes, paid by card or M-Pesa.
           </p>
-          
-          <div className="flex items-center gap-6">
-            <Link to="/events" className="bg-brand-red text-white px-8 py-4 rounded-md font-bold hover:bg-brand-red/90 transition flex items-center gap-2 shadow-[0_0_20px_rgba(227,38,54,0.3)]">
-              Explore events <ArrowRight size={18} />
+          <Link to="/events" className={`${buttonClasses("primary", "lg")} mt-8`}>
+            Browse events
+            <ArrowRight className="size-4" aria-hidden="true" />
+          </Link>
+        </div>
+      </section>
+
+      {/* upcoming */}
+      <section className="mx-auto max-w-6xl px-4 py-14 sm:px-6">
+        <div className="mb-8 flex items-end justify-between gap-4">
+          <div>
+            <h2 className="text-2xl font-bold text-fg sm:text-3xl">Happening soon</h2>
+            <p className="mt-1 text-sm text-muted">The next events on the calendar.</p>
+          </div>
+          {hasMore ? (
+            <Link to="/events" className="hidden items-center gap-1.5 text-sm font-semibold text-gold hover:underline sm:inline-flex">
+              View all events
+              <ArrowRight className="size-4" aria-hidden="true" />
             </Link>
-            <div className="text-sm text-text-muted">
-              <p>Discover with confidence</p>
+          ) : null}
+        </div>
+
+        <EventGrid
+          events={events}
+          loading={query.isPending}
+          error={query.isError ? query.error : null}
+          onRetry={() => void query.refetch()}
+        />
+
+        {hasMore ? (
+          <div className="mt-10 flex justify-center sm:hidden">
+            <Link to="/events" className={buttonClasses("secondary")}>
+              View all events
+            </Link>
+          </div>
+        ) : null}
+      </section>
+
+      {/* why */}
+      <section className="border-t border-line bg-panel/40">
+        <div className="mx-auto grid max-w-6xl gap-8 px-4 py-14 sm:px-6 md:grid-cols-3">
+          {HIGHLIGHTS.map(({ icon: Icon, title, text }) => (
+            <div key={title}>
+              <div className="mb-4 flex size-11 items-center justify-center rounded-xl border border-line bg-panel text-gold">
+                <Icon className="size-5" aria-hidden="true" />
+              </div>
+              <h3 className="text-lg font-semibold text-fg">{title}</h3>
+              <p className="mt-2 text-sm leading-relaxed text-muted">{text}</p>
             </div>
-          </div>
-        </div>
-
-        {/* Right: Massive Glossy Logo */}
-        <div className="md:w-1/2 relative flex justify-center items-center">
-          {/* Glow effect */}
-          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-150 h-150 bg-brand-red/10 blur-[150px] rounded-full pointer-events-none"></div>
-          
-          {/* Forced to 650px wide, shifted right slightly */}
-          <img 
-            src="/logo-icon.png" 
-            alt="TTI Logo" 
-            className="relative z-10 w-162.5 max-w-none object-contain drop-shadow-[0_0_50px_rgba(227,38,54,0.5)] md:-ml-12" 
-          />
-
-          {/* Decorative floating card */}
-          <div className="absolute -bottom-6 right-0 bg-dark-surface/80 backdrop-blur-md border border-brand-gold/30 p-5 rounded-xl shadow-2xl">
-            <p className="text-brand-gold text-xs font-bold uppercase tracking-wider mb-1">Editor's Pick</p>
-            <p className="text-text-main font-bold text-lg">Good nights.<br />Great stories.</p>
-          </div>
+          ))}
         </div>
       </section>
-
-      {/* Featured Events Section */}
-      <section className="border-t border-dark-surface pt-10">
-        <Events />
-      </section>
-    </div>
+    </>
   );
 }
 // ==========================================
 // END OF FILE: frontend/src/pages/public/Home.tsx
-// LOCATION: frontend/src/pages/public/Home.tsx
-// LAST UPDATED: October 21, 2026
 // ==========================================

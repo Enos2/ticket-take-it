@@ -1,67 +1,94 @@
 // ==========================================
 // FILE: frontend/src/pages/public/Login.tsx
-// PURPOSE: The login form for all users.
+// PURPOSE: Sign in.
 // ==========================================
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
-import api from "../../lib/api";
-import { useAuthStore } from "../../lib/authStore";
+import type { FormEvent } from "react";
+import { Link, Navigate, useLocation } from "react-router-dom";
+import Alert from "../../components/ui/Alert";
+import Button from "../../components/ui/Button";
+import Card from "../../components/ui/Card";
+import { Field, PasswordField } from "../../components/ui/Field";
+import { errorMessage } from "../../lib/api";
+import { useAuth } from "../../lib/authStore";
+import { useTitle } from "../../lib/useTitle";
 
 export default function Login() {
+  useTitle("Sign in");
+
+  const status = useAuth((s) => s.status);
+  const login = useAuth((s) => s.login);
+  const location = useLocation();
+  const from = (location.state as { from?: string } | null)?.from ?? "/";
+
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [error, setError] = useState("");
-  const navigate = useNavigate();
-  const loginStore = useAuthStore((s) => s.login);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
 
-  const handleLogin = async (e: React.FormEvent) => {
+  // Signed in (including right after a successful login): go where they were headed.
+  if (status === "authenticated") return <Navigate to={from} replace />;
+
+  async function onSubmit(e: FormEvent) {
     e.preventDefault();
+    setError(null);
+    setBusy(true);
     try {
-      const res = await api.post("/auth/login", { email, password });
-      loginStore(res.data.data.user, res.data.data.accessToken);
-      navigate("/");
-    } catch (err: any) {
-      setError(err.response?.data?.message || "Login failed");
+      await login(email.trim(), password);
+    } catch (err) {
+      setError(errorMessage(err));
+      setBusy(false);
     }
-  };
+  }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50">
-      <form onSubmit={handleLogin} className="bg-white p-8 rounded-lg shadow-md w-full max-w-md">
-        <h2 className="text-2xl font-bold mb-6 text-center">Welcome Back</h2>
-        {error && <p className="text-red-500 mb-4 text-center">{error}</p>}
-        
-        <div className="mb-4">
-          <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
-          <input
+    <div className="mx-auto flex max-w-md flex-col px-4 py-14 sm:py-20">
+      <h1 className="text-3xl font-extrabold text-fg">Welcome back</h1>
+      <p className="mt-2 text-sm text-muted">Sign in to see your tickets and orders.</p>
+
+      <Card className="mt-8 p-6 sm:p-8">
+        <form onSubmit={onSubmit} className="space-y-5" noValidate>
+          {error ? <Alert>{error}</Alert> : null}
+
+          <Field
+            label="Email"
             type="email"
-            className="w-full p-2 border rounded-md focus:ring-brand-500 focus:border-brand-500"
+            autoComplete="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             required
+            autoFocus
           />
-        </div>
-        
-        <div className="mb-6">
-          <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
-          <input
-            type="password"
-            className="w-full p-2 border rounded-md focus:ring-brand-500 focus:border-brand-500"
+
+          <PasswordField
+            label="Password"
+            autoComplete="current-password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             required
           />
-        </div>
 
-        <button type="submit" className="w-full bg-brand-600 text-white p-2 rounded-md hover:bg-brand-700 transition">
-          Sign In
-        </button>
-      </form>
+          <div className="flex justify-end">
+            <Link to="/forgot-password" className="text-sm text-gold underline-offset-4 hover:underline">
+              Forgot your password?
+            </Link>
+          </div>
+
+          <Button type="submit" size="lg" className="w-full" loading={busy} disabled={!email || !password}>
+            Sign in
+          </Button>
+        </form>
+      </Card>
+
+      <p className="mt-6 text-center text-sm text-muted">
+        New here?{" "}
+        <Link to="/register" className="font-semibold text-gold underline-offset-4 hover:underline">
+          Create an account
+        </Link>
+      </p>
     </div>
   );
 }
 // ==========================================
 // END OF FILE: frontend/src/pages/public/Login.tsx
-// LOCATION: frontend/src/pages/public/Login.tsx
-// LAST UPDATED: October 19, 2026
 // ==========================================
