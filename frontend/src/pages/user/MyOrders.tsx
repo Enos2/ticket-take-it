@@ -8,7 +8,6 @@ import { ChevronRight, Receipt } from "lucide-react";
 import OrderStatusBadge from "../../components/OrderStatusBadge";
 import Alert from "../../components/ui/Alert";
 import Button from "../../components/ui/Button";
-import Card from "../../components/ui/Card";
 import EmptyState from "../../components/ui/EmptyState";
 import { PageSpinner } from "../../components/ui/Spinner";
 import { buttonClasses } from "../../components/ui/styles";
