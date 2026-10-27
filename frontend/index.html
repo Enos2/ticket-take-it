@@ -1,16 +1,31 @@
 <!-- ==========================================
      FILE: frontend/index.html
-     PURPOSE: Main HTML entry point.
+     PURPOSE: Main HTML entry point: tab icon, title, fonts and page description.
      ========================================== -->
 <!doctype html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <!-- This links the tab icon to your glossy logo -->
+
+    <!-- Tab icon (the square logo-icon) and the iPhone home-screen icon -->
     <link rel="icon" type="image/png" href="/logo-icon.png" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <!-- This changes the tab text from "frontend" to "Ticket Take It" -->
+    <meta name="theme-color" content="#0B0B0D" />
+
     <title>Ticket Take It</title>
+    <meta name="description" content="Discover events across Kenya and get your tickets in minutes. Pay by card or M-Pesa." />
+
+    <!-- Link previews (WhatsApp, Facebook, X). The preview image is added when the site has its real address. -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Ticket Take It" />
+    <meta property="og:title" content="Ticket Take It" />
+    <meta property="og:description" content="Your World. Your Moment. Discover events across Kenya and get your tickets in minutes." />
+
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
   </head>
   <body>
     <div id="root"></div>
@@ -19,6 +34,4 @@
 </html>
 <!-- ==========================================
      END OF FILE: frontend/index.html
-     LOCATION: frontend/index.html
-     LAST UPDATED: October 20, 2026
      ========================================== -->

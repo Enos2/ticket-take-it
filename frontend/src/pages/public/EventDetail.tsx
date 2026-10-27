@@ -89,7 +89,7 @@ export default function EventDetail() {
 
         {/* details */}
         <aside>
-          <Card className="space-y-5 p-6 lg:sticky lg:top-24">
+          <Card className="space-y-5 p-6 lg:sticky lg:top-28">
             <div className="flex gap-3">
               <CalendarDays className="mt-0.5 size-5 shrink-0 text-gold" aria-hidden="true" />
               <div>

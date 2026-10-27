@@ -310,7 +310,7 @@ export default function Checkout() {
 
         {/* summary */}
         <aside className="lg:col-span-2">
-          <Card className="p-6 lg:sticky lg:top-24">
+          <Card className="p-6 lg:sticky lg:top-28">
             <h2 className="text-lg font-bold text-fg">Order summary</h2>
             <p className="mt-1 text-sm text-gold">{orderTitle(order)}</p>
 

@@ -1,17 +1,17 @@
 // ==========================================
 // FILE: frontend/src/components/Navbar.tsx
-// PURPOSE: Top navigation.
+// PURPOSE: Slim top navigation, led by the TTI icon + Ticket Take It wordmark.
 // ==========================================
 import { useState } from "react";
 import { Link, NavLink } from "react-router-dom";
-import { LogOut, Menu, Ticket, X } from "lucide-react";
+import { LogOut, Menu, X } from "lucide-react";
 import { cx } from "../lib/cx";
 import { useAuth } from "../lib/authStore";
 import Button from "./ui/Button";
 import { buttonClasses } from "./ui/styles";
 
 const linkClass = ({ isActive }: { isActive: boolean }) =>
-  cx("rounded-md px-3 py-2 text-sm font-medium transition-colors", isActive ? "text-gold" : "text-muted hover:text-fg");
+  cx("rounded-md px-3 py-1.5 text-sm font-medium transition-colors", isActive ? "text-gold" : "text-muted hover:text-fg");
 
 export default function Navbar() {
   const user = useAuth((s) => s.user);
@@ -33,12 +33,30 @@ export default function Navbar() {
 
   return (
     <header className="sticky top-0 z-40 border-b border-line bg-ink/85 backdrop-blur">
-      <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-4 sm:px-6">
-        <Link to="/" onClick={close} className="flex items-center gap-2">
-          <Ticket className="size-6 text-brand" aria-hidden="true" />
-          <span className="text-sm font-extrabold tracking-[0.18em] text-fg uppercase">
-            Ticket <span className="text-gold">Take It</span>
+      <div className="mx-auto flex h-14 max-w-6xl items-center justify-between gap-4 px-4 sm:px-6">
+        {/*
+          Logo: icon on the left, wordmark to its right.
+          Both PNGs are transparent. The icon file has empty space around the
+          artwork, so it sits in a small clipped box and is scaled up slightly
+          so only the artwork takes up room. That keeps the navbar slim.
+        */}
+        <Link to="/" onClick={close} className="flex shrink-0 items-center gap-2.5" aria-label="Ticket Take It, home">
+          <span className="relative block h-8 w-16 shrink-0 overflow-hidden" aria-hidden="true">
+            <img
+              src="/logo-icon.png"
+              alt=""
+              width={512}
+              height={512}
+              className="absolute left-1/2 top-1/2 h-auto w-[108%] max-w-none -translate-x-1/2 -translate-y-1/2"
+            />
           </span>
+          <img
+            src="/logo-wordmark.png"
+            alt="Ticket Take It"
+            width={720}
+            height={75}
+            className="h-4 w-auto sm:h-5"
+          />
         </Link>
 
         {/* desktop */}
@@ -83,7 +101,7 @@ export default function Navbar() {
         {/* mobile toggle */}
         <button
           type="button"
-          className="flex size-10 items-center justify-center rounded-lg text-muted hover:bg-panel hover:text-fg md:hidden"
+          className="flex size-9 shrink-0 items-center justify-center rounded-lg text-muted hover:bg-panel hover:text-fg md:hidden"
           onClick={() => setOpen((v) => !v)}
           aria-expanded={open}
           aria-label={open ? "Close menu" : "Open menu"}
