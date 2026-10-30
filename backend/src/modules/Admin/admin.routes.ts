@@ -9,6 +9,7 @@ import { parse } from "../../utils/parse";
 import { paginationSchema } from "../../utils/pagination";
 import * as service from "./admin.service";
 import * as refunds from "../payments/refund.service";
+import * as moderation from "../events/moderation.service";
 
 const router = Router();
 
@@ -20,6 +21,11 @@ const userStatusBody = z.object({ isActive: z.boolean() });
 const reasonBody = z.object({ reason: z.string().trim().max(500).optional() });
 const noteBody = z.object({ note: z.string().trim().max(500).optional() });
 
+// Rejecting or taking down an event always needs a reason the seller can read.
+const moderationBody = z.object({
+  reason: z.string().trim().min(5, "Please give a reason of at least 5 characters").max(500),
+});
+
 const search = z.string().trim().max(100).optional();
 
 const usersQuery = paginationSchema.extend({ q: search });
@@ -29,7 +35,9 @@ const sellersQuery = paginationSchema.extend({
 });
 
 const eventsQuery = paginationSchema.extend({
-  status: z.enum(["DRAFT", "PUBLISHED", "SOLD_OUT", "CANCELLED", "COMPLETED"]).optional(),
+  status: z
+    .enum(["DRAFT", "PENDING_REVIEW", "REJECTED", "PUBLISHED", "SOLD_OUT", "CANCELLED", "COMPLETED", "TAKEN_DOWN"])
+    .optional(),
 });
 
 const ordersQuery = paginationSchema.extend({
@@ -48,7 +56,8 @@ router.use(authenticate, authorize("ADMIN"));
 
 // ---- overview ----
 router.get("/stats", handle(async (_req, res) => {
-  res.json({ success: true, data: await service.getStats() });
+  const [stats, pendingEvents] = await Promise.all([service.getStats(), moderation.countPendingEvents()]);
+  res.json({ success: true, data: { ...stats, pendingEvents } });
 }));
 
 // ---- users ----
@@ -84,6 +93,30 @@ router.get("/events", handle(async (req, res) => {
   const { status, ...pagination } = parse(eventsQuery, req.query);
   const { items, total, page, limit } = await service.getAllEvents(pagination, status);
   res.json({ success: true, data: items, meta: { total, page, limit } });
+}));
+
+// Review decisions
+router.post("/events/:id/approve", handle(async (req, res) => {
+  const { id } = parse(idParam, req.params);
+  res.json({ success: true, data: await moderation.approveEvent(req.user!.sub, id) });
+}));
+
+router.post("/events/:id/reject", handle(async (req, res) => {
+  const { id } = parse(idParam, req.params);
+  const { reason } = parse(moderationBody, req.body ?? {});
+  res.json({ success: true, data: await moderation.rejectEvent(req.user!.sub, id, reason) });
+}));
+
+// Pause a live event: sales stop and it leaves the public site. Paid orders and tickets are untouched.
+router.post("/events/:id/takedown", handle(async (req, res) => {
+  const { id } = parse(idParam, req.params);
+  const { reason } = parse(moderationBody, req.body ?? {});
+  res.json({ success: true, data: await moderation.takeDownEvent(req.user!.sub, id, reason) });
+}));
+
+router.post("/events/:id/restore", handle(async (req, res) => {
+  const { id } = parse(idParam, req.params);
+  res.json({ success: true, data: await moderation.restoreEvent(req.user!.sub, id) });
 }));
 
 // Refunds all paid orders of a cancelled event, 25 per call. Repeat until `refunded` is 0.

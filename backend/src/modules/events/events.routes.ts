@@ -25,7 +25,9 @@ router.get("/:slug", controller.getBySlug);
 // Seller / admin management
 router.post("/", ...manage, validate(createEventSchema), controller.create);
 router.patch("/:eventId", ...manage, validate(updateEventSchema), controller.update);
-router.post("/:eventId/publish", ...manage, controller.publish);
+router.post("/:eventId/submit", ...manage, controller.submit); // send for review
+router.post("/:eventId/withdraw", ...manage, controller.withdraw); // take it back out of review
+router.post("/:eventId/publish", ...manage, controller.publish); // admin: publish now. seller: same as submit
 router.post("/:eventId/unpublish", ...manage, controller.unpublish);
 router.post("/:eventId/cancel", ...manage, controller.cancel);
 router.delete("/:eventId", ...manage, controller.remove);

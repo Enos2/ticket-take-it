@@ -26,16 +26,20 @@ enum SellerStatus {
 
 enum EventStatus {
   DRAFT
+  PENDING_REVIEW
+  REJECTED
   PUBLISHED
   SOLD_OUT
   CANCELLED
   COMPLETED
+  TAKEN_DOWN
 }
 
 enum TicketTier {
   EARLY_BIRD
   REGULAR
   VIP
+  VVIP
   GROUP
 }
 
@@ -135,23 +139,27 @@ model SellerProfile {
 }
 
 model Event {
-  id          String        @id @default(cuid())
-  sellerId    String
-  seller      SellerProfile @relation(fields: [sellerId], references: [id], onDelete: Cascade)
-  title       String
-  slug        String        @unique
-  description String
-  venue       String
-  city        String
-  country     String
-  startsAt    DateTime
-  endsAt      DateTime
-  bannerUrl   String?
-  status      EventStatus   @default(DRAFT)
-  createdAt   DateTime      @default(now())
-  updatedAt   DateTime      @updatedAt
-  ticketTypes TicketType[]
-  tickets     Ticket[]
+  id           String        @id @default(cuid())
+  sellerId     String
+  seller       SellerProfile @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  title        String
+  slug         String        @unique
+  description  String
+  venue        String
+  city         String
+  country      String
+  startsAt     DateTime
+  endsAt       DateTime
+  bannerUrl    String?
+  status       EventStatus   @default(DRAFT)
+  submittedAt  DateTime? // when the seller last sent it for review
+  reviewedAt   DateTime? // when an admin last decided
+  reviewedById String? // the admin who decided
+  reviewNote   String? // why it was rejected or taken down
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  ticketTypes  TicketType[]
+  tickets      Ticket[]
 
   @@index([sellerId])
   @@index([status, startsAt])

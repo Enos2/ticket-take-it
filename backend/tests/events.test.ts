@@ -49,36 +49,45 @@ describe("creating events", () => {
   });
 });
 
-describe("publishing", () => {
-  it("needs at least one ticket type, then shows the event publicly", async () => {
+describe("going live", () => {
+  it("needs a ticket type, then waits for an admin before it goes public", async () => {
     const seller = await createSeller();
+    const admin = await createUser("ADMIN");
     const created = await api().post("/api/v1/events").set(authHeader(seller.user)).send(eventBody());
     const eventId = created.body.data.id as string;
     const slug = created.body.data.slug as string;
 
-    expect((await api().post(`/api/v1/events/${eventId}/publish`).set(authHeader(seller.user))).status).toBe(400);
+    const submit = () => api().post(`/api/v1/events/${eventId}/submit`).set(authHeader(seller.user));
+
+    expect((await submit()).status).toBe(400); // no tickets yet
     expect((await api().get(`/api/v1/events/${slug}`)).status).toBe(404); // drafts are invisible
 
     const ticket = await api().post(`/api/v1/events/${eventId}/tickets`).set(authHeader(seller.user)).send(ticketBody());
     expect(ticket.status).toBe(201);
     expect(ticket.body.data.currency).toBe("KES");
 
-    const published = await api().post(`/api/v1/events/${eventId}/publish`).set(authHeader(seller.user));
-    expect(published.status).toBe(200);
-    expect(published.body.data.status).toBe("PUBLISHED");
+    const submitted = await submit();
+    expect(submitted.status).toBe(200);
+    expect(submitted.body.data.status).toBe("PENDING_REVIEW");
+    expect((await api().get(`/api/v1/events/${slug}`)).status).toBe(404); // still hidden while it waits
+
+    const approved = await api().post(`/api/v1/admin/events/${eventId}/approve`).set(authHeader(admin));
+    expect(approved.status).toBe(200);
+    expect(approved.body.data.status).toBe("PUBLISHED");
 
     expect((await api().get(`/api/v1/events/${slug}`)).status).toBe(200);
     const list = await api().get("/api/v1/events");
     expect(list.body.data.map((e: { slug: string }) => e.slug)).toContain(slug);
   });
 
-  it("stops other sellers from editing or publishing someone else's event", async () => {
+  it("stops other sellers from editing or submitting someone else's event", async () => {
     const owner = await createSeller();
     const rival = await createSeller();
     const created = await api().post("/api/v1/events").set(authHeader(owner.user)).send(eventBody());
     const eventId = created.body.data.id as string;
 
     expect((await api().patch(`/api/v1/events/${eventId}`).set(authHeader(rival.user)).send({ title: "Hijacked title" })).status).toBe(403);
+    expect((await api().post(`/api/v1/events/${eventId}/submit`).set(authHeader(rival.user))).status).toBe(403);
     expect((await api().post(`/api/v1/events/${eventId}/publish`).set(authHeader(rival.user))).status).toBe(403);
     expect((await api().post(`/api/v1/events/${eventId}/tickets`).set(authHeader(rival.user)).send(ticketBody())).status).toBe(403);
   });

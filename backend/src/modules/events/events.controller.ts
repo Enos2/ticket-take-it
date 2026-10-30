@@ -4,6 +4,7 @@
 // ==========================================
 import { Request, Response, NextFunction } from "express";
 import * as service from "./events.service";
+import * as moderation from "./moderation.service";
 import { ApiError } from "../../utils/ApiError";
 import { parse } from "../../utils/parse";
 import { listEventsQuerySchema, eventSlugParamSchema, eventIdParamSchema } from "./events.schema";
@@ -49,11 +50,38 @@ export async function update(req: Request, res: Response, next: NextFunction) {
   }
 }
 
+// Send the event for review (admins publish their own events straight away).
+export async function submit(req: Request, res: Response, next: NextFunction) {
+  try {
+    if (!req.user) throw ApiError.unauthorized();
+    const { eventId } = parse(eventIdParamSchema, req.params);
+    const data = await moderation.submitEvent(req.user.sub, req.user.role, eventId);
+    res.json({ success: true, data });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// Kept so older screens keep working. Admins publish a draft directly. Sellers' requests go to review.
 export async function publish(req: Request, res: Response, next: NextFunction) {
   try {
     if (!req.user) throw ApiError.unauthorized();
     const { eventId } = parse(eventIdParamSchema, req.params);
-    const data = await service.publishEvent(req.user.sub, req.user.role, eventId);
+    const data =
+      req.user.role === "ADMIN"
+        ? await service.publishEvent(req.user.sub, req.user.role, eventId)
+        : await moderation.submitEvent(req.user.sub, req.user.role, eventId);
+    res.json({ success: true, data });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function withdraw(req: Request, res: Response, next: NextFunction) {
+  try {
+    if (!req.user) throw ApiError.unauthorized();
+    const { eventId } = parse(eventIdParamSchema, req.params);
+    const data = await moderation.withdrawSubmission(req.user.sub, req.user.role, eventId);
     res.json({ success: true, data });
   } catch (err) {
     next(err);

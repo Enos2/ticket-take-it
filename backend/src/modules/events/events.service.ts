@@ -56,7 +56,7 @@ export async function createEvent(userId: string, input: CreateEventInput) {
           startsAt: new Date(input.startsAt),
           endsAt: new Date(input.endsAt),
           bannerUrl: input.bannerUrl,
-          status: "DRAFT", // sellers add tickets, then publish
+          status: "DRAFT", // sellers add tickets, submit for review, and an admin approves
         },
       });
     } catch (err) {
@@ -104,6 +104,10 @@ export async function updateEvent(userId: string, role: Role, eventId: string, i
   if (event.status === "CANCELLED" || event.status === "COMPLETED") {
     throw ApiError.badRequest("This event can no longer be edited");
   }
+  if (event.status === "PENDING_REVIEW") {
+    // Otherwise a seller could change an event after it was submitted for review.
+    throw ApiError.badRequest("This event is waiting for review. Withdraw it from review to edit it.");
+  }
 
   const now = new Date();
   const startsAt = input.startsAt ? new Date(input.startsAt) : event.startsAt;
@@ -137,6 +141,7 @@ export async function updateEvent(userId: string, role: Role, eventId: string, i
   });
 }
 
+// Admin-only direct publish of a draft. Sellers go through moderation.submitEvent instead.
 export async function publishEvent(userId: string, role: Role, eventId: string) {
   const event = await getManagedEvent(userId, role, eventId);
   if (event.status === "PUBLISHED") return event;
@@ -146,15 +151,17 @@ export async function publishEvent(userId: string, role: Role, eventId: string) 
   const activeTypes = await prisma.ticketType.count({ where: { eventId, isActive: true } });
   if (activeTypes === 0) throw ApiError.badRequest("Add at least one active ticket type before publishing");
 
+  const now = new Date();
   const flipped = await prisma.event.updateMany({
     where: { id: eventId, status: "DRAFT" },
-    data: { status: "PUBLISHED" },
+    data: { status: "PUBLISHED", submittedAt: now, reviewedAt: now, reviewedById: userId, reviewNote: null },
   });
   if (flipped.count === 0) throw ApiError.conflict("The event changed while publishing. Please refresh.");
 
   return await prisma.event.findUniqueOrThrow({ where: { id: eventId } });
 }
 
+// Takes a live event with no sales back to a draft. It needs approval again before it goes live.
 export async function unpublishEvent(userId: string, role: Role, eventId: string) {
   const event = await getManagedEvent(userId, role, eventId);
   if (event.status === "DRAFT") return event;
@@ -165,7 +172,7 @@ export async function unpublishEvent(userId: string, role: Role, eventId: string
 
   const flipped = await prisma.event.updateMany({
     where: { id: eventId, status: "PUBLISHED" },
-    data: { status: "DRAFT" },
+    data: { status: "DRAFT", submittedAt: null },
   });
   if (flipped.count === 0) throw ApiError.conflict("The event changed while unpublishing. Please refresh.");
 
@@ -183,7 +190,10 @@ export async function cancelEvent(userId: string, role: Role, eventId: string) {
   if (newlyCancelled) {
     await prisma.$transaction(async (tx) => {
       const flipped = await tx.event.updateMany({
-        where: { id: eventId, status: { in: ["DRAFT", "PUBLISHED", "SOLD_OUT"] } },
+        where: {
+          id: eventId,
+          status: { in: ["DRAFT", "PENDING_REVIEW", "REJECTED", "PUBLISHED", "SOLD_OUT", "TAKEN_DOWN"] },
+        },
         data: { status: "CANCELLED" },
       });
       if (flipped.count === 0) throw ApiError.conflict("The event changed while cancelling. Please refresh.");
