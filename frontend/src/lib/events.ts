@@ -9,6 +9,7 @@ export const TIER_LABEL: Record<TicketTier, string> = {
   EARLY_BIRD: "Early bird",
   REGULAR: "Regular",
   VIP: "VIP",
+  VVIP: "VVIP",
   GROUP: "Group",
 };
 

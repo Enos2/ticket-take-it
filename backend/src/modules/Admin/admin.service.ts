@@ -108,7 +108,7 @@ export async function getAllEvents(pagination: Pagination, status?: EventStatus)
       where,
       include: {
         seller: { select: { id: true, businessName: true, status: true } },
-        ticketTypes: { select: { quantity: true, sold: true } },
+        ticketTypes: { select: { name: true, tier: true, priceCents: true, currency: true, quantity: true, sold: true, isActive: true } },
       },
       orderBy: { createdAt: "desc" },
       ...skipTake(pagination),

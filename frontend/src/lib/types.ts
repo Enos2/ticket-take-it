@@ -4,8 +4,17 @@
 // ==========================================
 export type Role = "USER" | "SELLER" | "ADMIN";
 export type SellerStatus = "PENDING" | "APPROVED" | "REJECTED" | "SUSPENDED";
-export type EventStatus = "DRAFT" | "PUBLISHED" | "SOLD_OUT" | "CANCELLED" | "COMPLETED";
-export type TicketTier = "EARLY_BIRD" | "REGULAR" | "VIP" | "GROUP";
+export type EventStatus =
+  | "DRAFT"
+  | "PENDING_REVIEW"
+  | "REJECTED"
+  | "PUBLISHED"
+  | "SOLD_OUT"
+  | "CANCELLED"
+  | "COMPLETED"
+  | "TAKEN_DOWN";
+export type TicketTier = "EARLY_BIRD" | "REGULAR" | "VIP" | "VVIP" | "GROUP";
+export type EventCategory = "MUSIC" | "NIGHTLIFE" | "ARTS" | "SPORTS" | "CONFERENCE" | "FOOD" | "FAMILY" | "COMMUNITY" | "OTHER";
 export type OrderStatus = "PENDING" | "RESERVED" | "PAID" | "CANCELLED" | "REFUNDED" | "EXPIRED";
 export type TicketStatus = "VALID" | "USED" | "VOID";
 export type PaymentStatusValue = "PENDING" | "SUCCEEDED" | "FAILED" | "REFUNDED";
@@ -66,8 +75,13 @@ export interface EventBrief {
 export interface EventSummary extends EventBrief {
   description: string;
   country: string;
+  category: EventCategory;
   bannerUrl: string | null;
   ticketTypes: TicketType[];
+  // Only sellers and admins receive these.
+  reviewNote?: string | null; // why the event was rejected or taken down
+  submittedAt?: string | null;
+  reviewedAt?: string | null;
 }
 
 export interface PageMeta {
@@ -79,6 +93,13 @@ export interface PageMeta {
 export interface Page<T> {
   items: T[];
   meta: PageMeta;
+}
+
+// Cities and countries that have live events, for the filter menus.
+export interface EventFilterOptions {
+  cities: { name: string; count: number }[];
+  countries: { name: string; count: number }[];
+  categories: { value: EventCategory; count: number }[];
 }
 
 // ---- orders and tickets ----
@@ -174,6 +195,7 @@ export type SellerTicketBrief = Pick<
 export interface SellerEventListItem extends EventBrief {
   description: string;
   country: string;
+  category: EventCategory;
   bannerUrl: string | null;
   ticketTypes: SellerTicketBrief[];
 }

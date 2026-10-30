@@ -47,6 +47,7 @@ export default function AdminLayout() {
         </NavLink>
         <NavLink to="/admin/events" className={tabClass}>
           Events
+          <Count value={stats.data?.pendingEvents} />
         </NavLink>
         <NavLink to="/admin/orders" className={tabClass}>
           Orders

@@ -105,6 +105,9 @@ export default function SellerLayout() {
         <NavLink to="/seller" end className={tabClass}>
           My events
         </NavLink>
+        <NavLink to="/seller/orders" className={tabClass}>
+          Orders
+        </NavLink>
         <NavLink to="/seller/scan" className={tabClass}>
           <span className="inline-flex items-center gap-1.5">
             <QrCode className="size-4" aria-hidden="true" />

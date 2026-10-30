@@ -6,10 +6,23 @@ import { isEventOver } from "./events";
 import type { Tone } from "./orders";
 import type { EventStatus, SellerStatus, TicketStatus, TicketTier } from "./types";
 
-// What the seller sees for an event. Past events stay "published" in the database, so this works it out.
+// What people see for an event. Past events stay "published" in the database, so this works it out.
 export function displayStatus(event: { status: EventStatus; endsAt: string }): { label: string; tone: Tone } {
-  if (event.status === "CANCELLED") return { label: "Cancelled", tone: "brand" };
-  if (event.status === "DRAFT") return { label: "Draft", tone: "neutral" };
+  switch (event.status) {
+    case "CANCELLED":
+      return { label: "Cancelled", tone: "brand" };
+    case "DRAFT":
+      return { label: "Draft", tone: "neutral" };
+    case "PENDING_REVIEW":
+      return { label: "In review", tone: "gold" };
+    case "REJECTED":
+      return { label: "Needs changes", tone: "brand" };
+    case "TAKEN_DOWN":
+      return { label: "Taken down", tone: "brand" };
+    default:
+      break;
+  }
+
   if (event.status === "COMPLETED" || isEventOver(event)) return { label: "Ended", tone: "neutral" };
   if (event.status === "SOLD_OUT") return { label: "Sold out", tone: "gold" };
   return { label: "On sale", tone: "ok" };
@@ -36,6 +49,7 @@ export const TIER_HELP: Record<TicketTier, string> = {
   REGULAR: "A standard ticket at one price.",
   EARLY_BIRD: "A discounted price that only sells inside a date window.",
   VIP: "A premium ticket, such as reserved seating or backstage access.",
+  VVIP: "The top tier, for example a private area, hospitality and the best view.",
   GROUP: "Sold to groups of a set size, for example 4 to 8 people. Every person gets their own ticket.",
 };
 

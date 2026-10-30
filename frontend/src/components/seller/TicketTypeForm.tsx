@@ -28,7 +28,7 @@ interface Values {
 
 type Errors = Partial<Record<keyof Values, string>>;
 
-const TIERS: TicketTier[] = ["REGULAR", "EARLY_BIRD", "VIP", "GROUP"];
+const TIERS: TicketTier[] = ["REGULAR", "EARLY_BIRD", "VIP", "VVIP", "GROUP"];
 
 function initialValues(ticket: TicketType | null): Values {
   if (!ticket) {

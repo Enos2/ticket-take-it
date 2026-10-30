@@ -2,11 +2,12 @@
 // FILE: frontend/src/lib/adminTypes.ts
 // PURPOSE: Types for what the admin API returns.
 // ==========================================
-import type { EventStatus, OrderStatus, PaymentStatusValue, Role, SellerStatus } from "./types";
+import type { EventStatus, OrderStatus, PaymentStatusValue, Role, SellerStatus, TicketTier } from "./types";
 
 export interface AdminStats {
   users: number;
   pendingSellers: number;
+  pendingEvents: number;
   events: number;
   publishedEvents: number;
   paidOrders: number;
@@ -36,18 +37,33 @@ export interface AdminSeller {
   user: { email: string; fullName: string };
 }
 
+export interface AdminEventTicket {
+  name: string;
+  tier: TicketTier;
+  priceCents: number;
+  currency: string;
+  quantity: number;
+  sold: number;
+  isActive: boolean;
+}
+
 export interface AdminEvent {
   id: string;
   slug: string;
   title: string;
+  description: string;
+  bannerUrl: string | null;
   venue: string;
   city: string;
+  country: string;
   startsAt: string;
   endsAt: string;
   status: EventStatus;
   createdAt: string;
+  submittedAt: string | null;
+  reviewNote: string | null;
   seller: { id: string; businessName: string; status: SellerStatus };
-  ticketTypes: { quantity: number; sold: number }[];
+  ticketTypes: AdminEventTicket[];
 }
 
 export interface AdminOrder {

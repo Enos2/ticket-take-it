@@ -13,7 +13,7 @@ import { getManagedEvent } from "./event.access";
 import { CreateEventInput, UpdateEventInput, ListEventsQuery } from "./events.schema";
 
 // URL-friendly slug with a random suffix to avoid collisions.
-function generateSlug(title: string): string {
+export function generateSlug(title: string): string {
   const base =
     title
       .toLowerCase()
@@ -52,7 +52,7 @@ export async function createEvent(userId: string, input: CreateEventInput) {
           description: input.description,
           venue: input.venue,
           city: input.city,
-          country: input.country,
+          country: input.country, category: input.category,
           startsAt: new Date(input.startsAt),
           endsAt: new Date(input.endsAt),
           bannerUrl: input.bannerUrl,
@@ -133,7 +133,7 @@ export async function updateEvent(userId: string, role: Role, eventId: string, i
       description: input.description,
       venue: input.venue,
       city: input.city,
-      country: input.country,
+      country: input.country, category: input.category,
       startsAt: input.startsAt ? startsAt : undefined,
       endsAt: input.endsAt ? endsAt : undefined,
       bannerUrl: input.bannerUrl, // null clears it

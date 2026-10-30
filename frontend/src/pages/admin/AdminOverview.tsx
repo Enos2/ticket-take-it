@@ -4,7 +4,7 @@
 // ==========================================
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
-import { CalendarDays, Receipt, Store, Ticket, Users, Wallet } from "lucide-react";
+import { CalendarCheck, CalendarDays, Receipt, Ticket, Users, Wallet } from "lucide-react";
 import type { ReactNode } from "react";
 import Alert from "../../components/ui/Alert";
 import Button from "../../components/ui/Button";
@@ -53,11 +53,19 @@ export default function AdminOverview() {
   }
 
   const s = query.data;
+  const needsAttention = s.pendingSellers > 0 || s.pendingEvents > 0 || s.paymentsNeedingRefund > 0;
 
   return (
     <div className="space-y-8">
-      {s.pendingSellers > 0 || s.paymentsNeedingRefund > 0 ? (
+      {needsAttention ? (
         <section className="space-y-3" aria-label="Needs attention">
+          {s.pendingEvents > 0 ? (
+            <Alert variant="info">
+              <Link to="/admin/events" className={linkClass}>
+                {s.pendingEvents} {s.pendingEvents === 1 ? "event is" : "events are"} waiting for your review
+              </Link>
+            </Alert>
+          ) : null}
           {s.pendingSellers > 0 ? (
             <Alert variant="info">
               <Link to="/admin/sellers" className={linkClass}>
@@ -99,11 +107,11 @@ export default function AdminOverview() {
         <Stat icon={CalendarDays} label="Events" hint={`${s.publishedEvents} on sale`}>
           {s.events}
         </Stat>
+        <Stat icon={CalendarCheck} label="Events to review" hint="Waiting for a decision">
+          {s.pendingEvents}
+        </Stat>
         <Stat icon={Users} label="Accounts">
           {s.users}
-        </Stat>
-        <Stat icon={Store} label="Sellers waiting" hint="Applications to review">
-          {s.pendingSellers}
         </Stat>
       </div>
 

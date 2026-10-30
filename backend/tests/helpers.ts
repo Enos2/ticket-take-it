@@ -109,8 +109,8 @@ export async function createEventWithTicket(opts: {
       venue: "Test Venue",
       city: "Nairobi",
       country: "Kenya",
-      startsAt: inDays(7),
-      endsAt: inDays(7, 3),
+      startsAt: new Date(Date.now() + 2 * 60 * 60 * 1000),
+      endsAt: new Date(Date.now() + 5 * 60 * 60 * 1000),
       status: opts.eventStatus ?? "PUBLISHED",
     },
   });

@@ -38,6 +38,7 @@ const EventTickets = lazy(() => import("./pages/seller/EventTickets"));
 const EventEdit = lazy(() => import("./pages/seller/EventEdit"));
 const EventAttendees = lazy(() => import("./pages/seller/EventAttendees"));
 const Scanner = lazy(() => import("./pages/seller/Scanner"));
+const SellerOrders = lazy(() => import("./pages/seller/SellerOrders"));
 
 const AdminOverview = lazy(() => import("./pages/admin/AdminOverview"));
 const AdminSellers = lazy(() => import("./pages/admin/AdminSellers"));
@@ -91,6 +92,7 @@ export default function App() {
             <Route path="seller" element={<SellerLayout />}>
               <Route index element={<SellerDashboard />} />
               <Route path="scan" element={<Scanner />} />
+              <Route path="orders" element={<SellerOrders />} />
               <Route path="events/new" element={<CreateEvent />} />
               <Route path="events/:eventId" element={<EventManage />}>
                 <Route index element={<EventOverview />} />

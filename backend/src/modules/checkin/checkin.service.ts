@@ -1,16 +1,29 @@
 // ==========================================
 // FILE: backend/src/modules/checkin/checkin.service.ts
-// PURPOSE: Validates a scanned ticket and admits the holder exactly once.
+// PURPOSE: Validates a scanned ticket and admits the holder exactly once, inside the event's entry window.
 // ==========================================
 import { Role } from "@prisma/client";
 import { prisma } from "../../config/database";
 import { ApiError } from "../../utils/ApiError";
 
+// Doors can open early, and late arrivals still need to get in. Admins can override both.
+const OPENS_BEFORE_MS = 12 * 60 * 60 * 1000;
+const CLOSES_AFTER_MS = 6 * 60 * 60 * 1000;
+
 export async function checkInTicket(userId: string, role: Role, code: string) {
   const ticket = await prisma.ticket.findUnique({
     where: { code },
     include: {
-      event: { select: { id: true, title: true, status: true, seller: { select: { userId: true, status: true } } } },
+      event: {
+        select: {
+          id: true,
+          title: true,
+          status: true,
+          startsAt: true,
+          endsAt: true,
+          seller: { select: { userId: true, status: true } },
+        },
+      },
       ticketType: { select: { name: true } },
       user: { select: { fullName: true } },
     },
@@ -29,6 +42,16 @@ export async function checkInTicket(userId: string, role: Role, code: string) {
 
   if (ticket.event.status === "CANCELLED") throw ApiError.conflict("This event was cancelled");
   if (ticket.status === "VOID") throw ApiError.conflict("Ticket is void (refunded or cancelled)");
+
+  // Entry window. A forged or leaked code is useless days before the event, or long after it.
+  if (role !== "ADMIN") {
+    const now = Date.now();
+    const opensAt = new Date(ticket.event.startsAt.getTime() - OPENS_BEFORE_MS);
+    const closedAt = new Date(ticket.event.endsAt.getTime() + CLOSES_AFTER_MS);
+
+    if (now < opensAt.getTime()) throw ApiError.conflict(`Check-in for this event opens at ${opensAt.toISOString()}`);
+    if (now > closedAt.getTime()) throw ApiError.conflict("This event has ended, so check-in is closed");
+  }
 
   // ATOMIC: only one scan can flip VALID -> USED, even if two scanners read the code at once.
   const now = new Date();

@@ -54,16 +54,16 @@ function when(date: Date): string {
   }).format(date);
 }
 
-const para = (html: string) =>
+export const para = (html: string) =>
   `<p style="margin:0 0 16px;color:${BRAND.text};font-size:15px;line-height:1.6;">${html}</p>`;
 
-const small = (html: string) =>
+export const small = (html: string) =>
   `<p style="margin:16px 0 0;color:${BRAND.muted};font-size:13px;line-height:1.5;">${html}</p>`;
 
-const button = (url: string, label: string) =>
+export const button = (url: string, label: string) =>
   `<p style="margin:24px 0;"><a href="${esc(url)}" style="display:inline-block;background:${BRAND.red};color:#ffffff;text-decoration:none;font-weight:600;padding:12px 24px;border-radius:8px;">${esc(label)}</a></p>`;
 
-function layout(heading: string, inner: string): string {
+export function layout(heading: string, inner: string): string {
   return `<!doctype html>
 <html>
 <body style="margin:0;padding:0;background:${BRAND.black};font-family:Inter,Arial,Helvetica,sans-serif;">

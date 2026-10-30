@@ -9,6 +9,9 @@ import { getManagedEvent } from "../events/event.access";
 import { CreateTicketTypeInput, UpdateTicketTypeInput } from "./tickets.schema";
 
 function assertEventEditable(event: { status: string; endsAt: Date }) {
+  if (event.status === "PENDING_REVIEW") {
+    throw ApiError.badRequest("This event is waiting for review. Withdraw it from review to change its tickets.");
+  }
   if (event.status === "CANCELLED" || event.status === "COMPLETED" || event.endsAt < new Date()) {
     throw ApiError.badRequest("Tickets cannot be changed on an event that has ended or been cancelled");
   }

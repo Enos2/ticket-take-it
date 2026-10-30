@@ -8,6 +8,7 @@ import { eventPricing } from "../lib/events";
 import { formatDateTime } from "../lib/format";
 import type { EventSummary } from "../lib/types";
 import Badge from "./ui/Badge";
+import { CATEGORY_LABEL } from "../lib/categories";
 
 export default function EventCard({ event }: { event: EventSummary }) {
   const pricing = eventPricing(event);
@@ -36,6 +37,7 @@ export default function EventCard({ event }: { event: EventSummary }) {
       </div>
 
       <div className="flex flex-1 flex-col p-5">
+        <p className="mb-1 text-xs font-semibold tracking-widest text-gold uppercase">{CATEGORY_LABEL[event.category] ?? event.category}</p>
         <h3 className="line-clamp-2 text-lg leading-snug font-bold text-fg">{event.title}</h3>
         <ul className="mt-3 space-y-1.5 text-sm text-muted">
           <li className="flex items-start gap-2">

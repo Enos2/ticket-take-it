@@ -11,6 +11,18 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+enum EventCategory {
+  MUSIC
+  NIGHTLIFE
+  ARTS
+  SPORTS
+  CONFERENCE
+  FOOD
+  FAMILY
+  COMMUNITY
+  OTHER
+}
+
 enum Role {
   USER
   SELLER
@@ -152,6 +164,7 @@ model Event {
   endsAt       DateTime
   bannerUrl    String?
   status       EventStatus   @default(DRAFT)
+  category     EventCategory @default(OTHER)
   submittedAt  DateTime? // when the seller last sent it for review
   reviewedAt   DateTime? // when an admin last decided
   reviewedById String? // the admin who decided
@@ -163,6 +176,7 @@ model Event {
 
   @@index([sellerId])
   @@index([status, startsAt])
+  @@index([category])
 }
 
 model TicketType {

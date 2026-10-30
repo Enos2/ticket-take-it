@@ -6,10 +6,11 @@ import { useState } from "react";
 import type { FormEvent } from "react";
 import { inputToTime, nairobiInputToIso, nowNairobiInput } from "../lib/datetime";
 import { EMPTY_EVENT_VALUES } from "../lib/eventForm";
+import { CATEGORY_OPTIONS } from "../lib/categories";
 import type { EventFormValues, EventPayload } from "../lib/eventForm";
 import Alert from "./ui/Alert";
 import Button from "./ui/Button";
-import { Field, TextAreaField } from "./ui/Field";
+import { Field, SelectField, TextAreaField } from "./ui/Field";
 
 type Errors = Partial<Record<keyof EventFormValues, string>>;
 
@@ -57,6 +58,7 @@ function buildPayload(values: EventFormValues, initial: EventFormValues | null):
   if (changed("venue")) payload.venue = values.venue.trim();
   if (changed("city")) payload.city = values.city.trim();
   if (changed("country")) payload.country = values.country.trim();
+  if (changed("category")) payload.category = values.category;
   if (changed("startsAt")) payload.startsAt = nairobiInputToIso(values.startsAt);
   if (changed("endsAt")) payload.endsAt = nairobiInputToIso(values.endsAt);
 
@@ -146,6 +148,13 @@ export default function EventForm({ initial, submitLabel, busy, error, onSubmit 
       </div>
 
       <Field label="Country" value={values.country} onChange={(e) => set("country")(e.target.value)} error={shown("country")} />
+      <SelectField label="Category" value={values.category} onChange={(e) => set("category")(e.target.value)} hint="Helps people find your event.">
+        {CATEGORY_OPTIONS.map((c) => (
+          <option key={c.value} value={c.value}>
+            {c.label}
+          </option>
+        ))}
+      </SelectField>
 
       <Field
         label="Banner image link (optional)"

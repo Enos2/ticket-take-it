@@ -4,6 +4,18 @@
 // ==========================================
 import { z } from "zod";
 
+export const EVENT_CATEGORIES = [
+  "MUSIC",
+  "NIGHTLIFE",
+  "ARTS",
+  "SPORTS",
+  "CONFERENCE",
+  "FOOD",
+  "FAMILY",
+  "COMMUNITY",
+  "OTHER",
+] as const;
+
 const httpsUrl = z
   .string()
   .trim()
@@ -22,7 +34,7 @@ const fields = {
 };
 
 export const createEventSchema = z
-  .object({ ...fields, bannerUrl: httpsUrl.optional() })
+  .object({ ...fields, category: z.enum(EVENT_CATEGORIES).default("OTHER"), bannerUrl: httpsUrl.optional() })
   .refine((d) => new Date(d.startsAt) > new Date(), {
     message: "startsAt must be in the future",
     path: ["startsAt"],
@@ -34,7 +46,7 @@ export const createEventSchema = z
 
 // Every field optional. bannerUrl: null clears the banner.
 export const updateEventSchema = z
-  .object({ ...fields, bannerUrl: httpsUrl.nullable() })
+  .object({ ...fields, category: z.enum(EVENT_CATEGORIES), bannerUrl: httpsUrl.nullable() })
   .partial()
   .refine((d) => Object.keys(d).length > 0, { message: "Provide at least one field to update" });
 

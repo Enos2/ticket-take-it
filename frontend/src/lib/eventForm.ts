@@ -3,7 +3,7 @@
 // PURPOSE: The values and payload of the event form, shared by the create and edit screens.
 // ==========================================
 import { isoToNairobiInput } from "./datetime";
-import type { SellerEvent } from "./types";
+import type { EventCategory, SellerEvent } from "./types";
 
 // Everything is text while the person types.
 export interface EventFormValues {
@@ -12,6 +12,7 @@ export interface EventFormValues {
   venue: string;
   city: string;
   country: string;
+  category: EventCategory;
   startsAt: string; // Nairobi time, as a datetime-local value
   endsAt: string;
   bannerUrl: string;
@@ -24,6 +25,7 @@ export interface EventPayload {
   venue?: string;
   city?: string;
   country?: string;
+  category?: EventCategory;
   startsAt?: string;
   endsAt?: string;
   bannerUrl?: string | null; // null removes the banner
@@ -35,6 +37,7 @@ export const EMPTY_EVENT_VALUES: EventFormValues = {
   venue: "",
   city: "",
   country: "Kenya",
+  category: "OTHER",
   startsAt: "",
   endsAt: "",
   bannerUrl: "",
@@ -47,6 +50,7 @@ export function eventToFormValues(event: SellerEvent): EventFormValues {
     venue: event.venue,
     city: event.city,
     country: event.country,
+    category: event.category,
     startsAt: isoToNairobiInput(event.startsAt),
     endsAt: isoToNairobiInput(event.endsAt),
     bannerUrl: event.bannerUrl ?? "",

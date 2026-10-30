@@ -7,6 +7,8 @@ import { prisma } from "../../config/database";
 import { ApiError } from "../../utils/ApiError";
 import { logger } from "../../utils/logger";
 import { getManagedEvent } from "./event.access";
+import { background } from "../../utils/background";
+import { notifyEventReview } from "../notifications/reviewNotifications.service";
 
 const SUBMITTABLE: EventStatus[] = ["DRAFT", "REJECTED"];
 const LIVE: EventStatus[] = ["PUBLISHED", "SOLD_OUT"];
@@ -111,7 +113,7 @@ export async function approveEvent(adminId: string, eventId: string) {
   });
   if (moved.count === 0) throw ApiError.conflict("The event changed while approving. Please refresh.");
 
-  logger.info(`Event ${eventId} approved by admin ${adminId}`);
+  logger.info(`Event ${eventId} approved by admin ${adminId}`); background(notifyEventReview(eventId, "APPROVED"), "event review email");
   return await reload(eventId);
 }
 
@@ -127,7 +129,7 @@ export async function rejectEvent(adminId: string, eventId: string, reason: stri
   });
   if (moved.count === 0) throw ApiError.conflict("The event changed while rejecting. Please refresh.");
 
-  logger.info(`Event ${eventId} rejected by admin ${adminId}`);
+  logger.info(`Event ${eventId} rejected by admin ${adminId}`); background(notifyEventReview(eventId, "REJECTED"), "event review email");
   return await reload(eventId);
 }
 
@@ -144,7 +146,7 @@ export async function takeDownEvent(adminId: string, eventId: string, reason: st
   });
   if (moved.count === 0) throw ApiError.conflict("The event changed while taking it down. Please refresh.");
 
-  logger.info(`Event ${eventId} taken down by admin ${adminId}`);
+  logger.info(`Event ${eventId} taken down by admin ${adminId}`); background(notifyEventReview(eventId, "TAKEN_DOWN"), "event review email");
   return await reload(eventId);
 }
 
@@ -164,7 +166,7 @@ export async function restoreEvent(adminId: string, eventId: string) {
   });
   if (moved.count === 0) throw ApiError.conflict("The event changed while restoring. Please refresh.");
 
-  logger.info(`Event ${eventId} restored by admin ${adminId}`);
+  logger.info(`Event ${eventId} restored by admin ${adminId}`); background(notifyEventReview(eventId, "RESTORED"), "event review email");
   return await reload(eventId);
 }
 

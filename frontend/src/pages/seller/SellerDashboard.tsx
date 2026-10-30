@@ -25,6 +25,9 @@ const FILTERS: { label: string; value: "" | EventStatus }[] = [
   { label: "All", value: "" },
   { label: "Drafts", value: "DRAFT" },
   { label: "On sale", value: "PUBLISHED" },
+  { label: "In review", value: "PENDING_REVIEW" },
+  { label: "Needs changes", value: "REJECTED" },
+  { label: "Taken down", value: "TAKEN_DOWN" },
   { label: "Cancelled", value: "CANCELLED" },
 ];
 

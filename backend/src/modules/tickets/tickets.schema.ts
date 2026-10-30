@@ -20,7 +20,7 @@ export const createTicketTypeSchema = z
   .object({
     name: z.string().trim().min(2).max(100),
     description: z.string().trim().max(1000).optional(),
-    tier: z.enum(["EARLY_BIRD", "REGULAR", "VIP", "GROUP"]),
+    tier: z.enum(["EARLY_BIRD", "REGULAR", "VIP", "VVIP", "GROUP"]),
     priceCents: z.number().int().min(0).max(MAX_PRICE_CENTS), // 0 = free ticket
     currency: z.string().trim().length(3).toUpperCase().default("KES"),
     quantity: z.number().int().positive().max(MAX_QUANTITY),

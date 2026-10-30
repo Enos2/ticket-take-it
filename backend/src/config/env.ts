@@ -112,6 +112,11 @@ const envSchema = z
 
     if (v.NODE_ENV !== "production") return;
 
+    // Mock payments let anyone holding the shared secret mark orders paid. They can never run in production.
+    if (v.ENABLE_MOCK_PAYMENTS === "true") {
+      add("ENABLE_MOCK_PAYMENTS", "Mock payments cannot be enabled in production");
+    }
+
     // ---- production only ----
     const secrets: Record<string, string | undefined> = {
       JWT_ACCESS_SECRET: v.JWT_ACCESS_SECRET,
