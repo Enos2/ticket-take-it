@@ -33,6 +33,14 @@ export const authLimiter = rateLimit({
 });
 
 // Starting a payment can send a prompt to someone's phone, so it gets its own limit.
+// Browsers report their own crashes here. Capped so it can't be used to fill the logs.
+export const clientErrorLimiter = rateLimit({
+  ...base,
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  skip: () => isTest,
+  message: { success: false, message: "Too many reports." },
+});
 export const paymentLimiter = rateLimit({
   ...base,
   windowMs: 15 * 60 * 1000,

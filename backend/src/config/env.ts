@@ -57,6 +57,13 @@ const envSchema = z
     // Paystack: hosted checkout for cards and mobile money. Leave blank to disable.
     PAYSTACK_SECRET_KEY: optionalString,
 
+    // Error monitoring (Sentry). Leave blank to turn it off.
+    SENTRY_DSN: optionalString,
+
+    // Money model: commission in basis points (500 = 5%), and days after an event ends before earnings can be paid out.
+    PLATFORM_FEE_BPS: z.coerce.number().int().min(0).max(5000).default(500),
+    PAYOUT_HOLD_DAYS: z.coerce.number().int().min(0).max(60).default(3),
+
     // M-Pesa direct (Safaricom Daraja). Leave all blank to disable.
     MPESA_ENV: z.enum(["sandbox", "production"]).default("sandbox"),
     MPESA_CONSUMER_KEY: optionalString,

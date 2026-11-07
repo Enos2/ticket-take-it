@@ -1,14 +1,20 @@
 // ==========================================
 // FILE: backend/src/server.ts
-// PURPOSE: Starts the server and background jobs.
+// PURPOSE: Starts the server and the background jobs.
 // ==========================================
 import app from "./app";
 import { env } from "./config/env";
 import { logger } from "./utils/logger";
 import { prisma } from "./config/database";
+import { captureError, flushMonitoring, initMonitoring } from "./utils/monitoring";
 import { releaseExpiredOrders } from "./modules/orders/orders.service";
 import { cleanupExpiredRefreshTokens } from "./modules/auth/auth.service";
 import { reconcilePayments } from "./modules/payments/payments.jobs";
+import { reconcileLedger } from "./modules/finance/ledger.service";
+import { processEmailOutbox } from "./modules/system/outbox.service";
+import { jobFinished, jobStarted, registerJob } from "./modules/system/jobs";
+
+initMonitoring();
 
 const server = app.listen(env.PORT, () => {
   logger.info(`Ticket Take It API running on http://localhost:${env.PORT}`);
@@ -20,18 +26,23 @@ server.keepAliveTimeout = 65_000;
 server.headersTimeout = 66_000;
 
 // ---- Background jobs ----
-// Each job skips a tick if its previous run is still going.
+// Each job skips a tick if its previous run is still going, and reports to the health screen.
 function startJob(name: string, intervalMs: number, job: () => Promise<number>) {
+  registerJob(name, intervalMs);
   let running = false;
 
   const timer = setInterval(async () => {
     if (running) return;
     running = true;
+    jobStarted(name);
     try {
       const count = await job();
+      jobFinished(name, count, null);
       if (count > 0) logger.info(`${name}: ${count} item(s)`);
     } catch (err) {
+      jobFinished(name, null, err instanceof Error ? err.message : "Job failed");
       logger.error({ err }, `${name} failed`);
+      captureError(err, { job: name });
     } finally {
       running = false;
     }
@@ -42,9 +53,11 @@ function startJob(name: string, intervalMs: number, job: () => Promise<number>) 
 }
 
 const timers = [
-  startJob("releaseExpiredOrders", 60_000, releaseExpiredOrders), // every minute
-  startJob("reconcilePayments", 60_000, reconcilePayments), // every minute
-  startJob("cleanupExpiredTokens", 60 * 60_000, cleanupExpiredRefreshTokens), // every hour
+  startJob("releaseExpiredOrders", 60_000, releaseExpiredOrders),
+  startJob("reconcilePayments", 60_000, reconcilePayments),
+  startJob("reconcileLedger", 60_000, reconcileLedger),
+  startJob("processEmailOutbox", 60_000, processEmailOutbox),
+  startJob("cleanupExpiredTokens", 60 * 60_000, cleanupExpiredRefreshTokens),
 ];
 
 // ---- Graceful shutdown ----
@@ -66,6 +79,7 @@ function shutdown(signal: string, exitCode = 0) {
 
   server.close(async () => {
     try {
+      await flushMonitoring();
       await prisma.$disconnect();
     } finally {
       process.exit(exitCode);
@@ -78,11 +92,13 @@ process.on("SIGTERM", () => shutdown("SIGTERM")); // sent by Render, Docker, etc
 
 process.on("unhandledRejection", (reason) => {
   logger.error({ err: reason }, "Unhandled promise rejection");
+  captureError(reason, { kind: "unhandledRejection" });
   shutdown("unhandledRejection", 1);
 });
 
 process.on("uncaughtException", (err) => {
   logger.error({ err }, "Uncaught exception");
+  captureError(err, { kind: "uncaughtException" });
   shutdown("uncaughtException", 1);
 });
 // ==========================================

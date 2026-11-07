@@ -28,6 +28,7 @@ const CheckoutComplete = lazy(() => import("./pages/user/CheckoutComplete"));
 const MyTickets = lazy(() => import("./pages/user/MyTickets"));
 const MyOrders = lazy(() => import("./pages/user/MyOrders"));
 const OrderDetail = lazy(() => import("./pages/user/OrderDetail"));
+const Receipt = lazy(() => import("./pages/user/Receipt"));
 
 const SellerApply = lazy(() => import("./pages/seller/SellerApply"));
 const SellerDashboard = lazy(() => import("./pages/seller/SellerDashboard"));
@@ -39,6 +40,7 @@ const EventEdit = lazy(() => import("./pages/seller/EventEdit"));
 const EventAttendees = lazy(() => import("./pages/seller/EventAttendees"));
 const Scanner = lazy(() => import("./pages/seller/Scanner"));
 const SellerOrders = lazy(() => import("./pages/seller/SellerOrders"));
+const SellerEarnings = lazy(() => import("./pages/seller/SellerEarnings"));
 
 const AdminOverview = lazy(() => import("./pages/admin/AdminOverview"));
 const AdminSellers = lazy(() => import("./pages/admin/AdminSellers"));
@@ -46,6 +48,9 @@ const AdminEvents = lazy(() => import("./pages/admin/AdminEvents"));
 const AdminOrders = lazy(() => import("./pages/admin/AdminOrders"));
 const AdminRefunds = lazy(() => import("./pages/admin/AdminRefunds"));
 const AdminUsers = lazy(() => import("./pages/admin/AdminUsers"));
+const AdminPayouts = lazy(() => import("./pages/admin/AdminPayouts"));
+const AdminAudit = lazy(() => import("./pages/admin/AdminAudit"));
+const AdminSystem = lazy(() => import("./pages/admin/AdminSystem"));
 
 export default function App() {
   const init = useAuth((s) => s.init);
@@ -85,6 +90,7 @@ export default function App() {
               <Route path="tickets" element={<MyTickets />} />
               <Route path="orders" element={<MyOrders />} />
               <Route path="orders/:orderId" element={<OrderDetail />} />
+              <Route path="orders/:orderId/receipt" element={<Receipt />} />
             </Route>
 
             {/* selling */}
@@ -93,6 +99,7 @@ export default function App() {
               <Route index element={<SellerDashboard />} />
               <Route path="scan" element={<Scanner />} />
               <Route path="orders" element={<SellerOrders />} />
+              <Route path="earnings" element={<SellerEarnings />} />
               <Route path="events/new" element={<CreateEvent />} />
               <Route path="events/:eventId" element={<EventManage />}>
                 <Route index element={<EventOverview />} />
@@ -112,6 +119,9 @@ export default function App() {
               <Route path="orders" element={<AdminOrders />} />
               <Route path="refunds" element={<AdminRefunds />} />
               <Route path="users" element={<AdminUsers />} />
+              <Route path="payouts" element={<AdminPayouts />} />
+              <Route path="audit" element={<AdminAudit />} />
+              <Route path="system" element={<AdminSystem />} />
             </Route>
           </Route>
 

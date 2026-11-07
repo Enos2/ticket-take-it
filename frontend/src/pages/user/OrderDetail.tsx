@@ -98,6 +98,11 @@ export default function OrderDetail() {
           <span className="text-xl font-extrabold text-fg">{formatMoney(order.totalCents, order.currency)}</span>
         </div>
 
+        {order.status === "PAID" || order.status === "REFUNDED" ? (
+          <Link to={`/account/orders/${order.id}/receipt`} className={`${buttonClasses("secondary")} mt-6 w-full`}>
+            View receipt
+          </Link>
+        ) : null}
         {isUnpaid(order.status) ? (
           <Link to={`/checkout/${order.id}`} className={`${buttonClasses("primary", "lg")} mt-6 w-full`}>
             Complete payment

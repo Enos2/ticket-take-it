@@ -1,6 +1,6 @@
 // ==========================================
 // FILE: backend/src/modules/admin/admin.routes.ts
-// PURPOSE: Admin API routes.
+// PURPOSE: Admin API routes. Every change an admin makes is written to the audit log.
 // ==========================================
 import { Router, Request, Response, NextFunction } from "express";
 import { z } from "zod";
@@ -10,6 +10,7 @@ import { paginationSchema } from "../../utils/pagination";
 import * as service from "./admin.service";
 import * as refunds from "../payments/refund.service";
 import * as moderation from "../events/moderation.service";
+import { audit } from "../system/audit.service";
 
 const router = Router();
 
@@ -71,6 +72,13 @@ router.patch("/users/:id/status", handle(async (req, res) => {
   const { id } = parse(idParam, req.params);
   const { isActive } = parse(userStatusBody, req.body);
   const data = await service.setUserActive(req.user!.sub, id, isActive);
+  await audit(req, {
+    action: "user.status",
+    targetType: "user",
+    targetId: id,
+    summary: `${isActive ? "Enabled" : "Disabled"} the account of ${data.email}`,
+    metadata: { isActive },
+  });
   res.json({ success: true, data });
 }));
 
@@ -85,6 +93,13 @@ router.patch("/sellers/:id/status", handle(async (req, res) => {
   const { id } = parse(idParam, req.params);
   const { status } = parse(sellerStatusBody, req.body);
   const data = await service.updateSellerStatus(id, status);
+  await audit(req, {
+    action: "seller.status",
+    targetType: "seller",
+    targetId: id,
+    summary: `Set seller "${data.businessName}" to ${status}`,
+    metadata: { status },
+  });
   res.json({ success: true, data });
 }));
 
@@ -98,25 +113,33 @@ router.get("/events", handle(async (req, res) => {
 // Review decisions
 router.post("/events/:id/approve", handle(async (req, res) => {
   const { id } = parse(idParam, req.params);
-  res.json({ success: true, data: await moderation.approveEvent(req.user!.sub, id) });
+  const data = await moderation.approveEvent(req.user!.sub, id);
+  await audit(req, { action: "event.approve", targetType: "event", targetId: id, summary: `Approved event "${data.title}"` });
+  res.json({ success: true, data });
 }));
 
 router.post("/events/:id/reject", handle(async (req, res) => {
   const { id } = parse(idParam, req.params);
   const { reason } = parse(moderationBody, req.body ?? {});
-  res.json({ success: true, data: await moderation.rejectEvent(req.user!.sub, id, reason) });
+  const data = await moderation.rejectEvent(req.user!.sub, id, reason);
+  await audit(req, { action: "event.reject", targetType: "event", targetId: id, summary: `Rejected event "${data.title}"`, metadata: { reason } });
+  res.json({ success: true, data });
 }));
 
 // Pause a live event: sales stop and it leaves the public site. Paid orders and tickets are untouched.
 router.post("/events/:id/takedown", handle(async (req, res) => {
   const { id } = parse(idParam, req.params);
   const { reason } = parse(moderationBody, req.body ?? {});
-  res.json({ success: true, data: await moderation.takeDownEvent(req.user!.sub, id, reason) });
+  const data = await moderation.takeDownEvent(req.user!.sub, id, reason);
+  await audit(req, { action: "event.takedown", targetType: "event", targetId: id, summary: `Took down event "${data.title}"`, metadata: { reason } });
+  res.json({ success: true, data });
 }));
 
 router.post("/events/:id/restore", handle(async (req, res) => {
   const { id } = parse(idParam, req.params);
-  res.json({ success: true, data: await moderation.restoreEvent(req.user!.sub, id) });
+  const data = await moderation.restoreEvent(req.user!.sub, id);
+  await audit(req, { action: "event.restore", targetType: "event", targetId: id, summary: `Restored event "${data.title}"` });
+  res.json({ success: true, data });
 }));
 
 // Refunds all paid orders of a cancelled event, 25 per call. Repeat until `refunded` is 0.
@@ -124,6 +147,15 @@ router.post("/events/:id/refund-orders", handle(async (req, res) => {
   const { id } = parse(idParam, req.params);
   const { reason } = parse(reasonBody, req.body ?? {});
   const data = await refunds.refundEventOrders(req.user!.sub, id, reason);
+  if (data.refunded > 0 || data.failed.length > 0) {
+    await audit(req, {
+      action: "event.refund_orders",
+      targetType: "event",
+      targetId: id,
+      summary: `Refunded ${data.refunded} order(s) of a cancelled event`,
+      metadata: { refunded: data.refunded, failed: data.failed.length },
+    });
+  }
   res.json({ success: true, data });
 }));
 
@@ -138,6 +170,13 @@ router.post("/orders/:id/refund", handle(async (req, res) => {
   const { id } = parse(idParam, req.params);
   const { reason } = parse(reasonBody, req.body ?? {});
   const data = await refunds.refundOrder(req.user!.sub, id, reason);
+  await audit(req, {
+    action: "order.refund",
+    targetType: "order",
+    targetId: id,
+    summary: `Refunded order ${data.reference}`,
+    metadata: { manualRefundRequired: data.manualRefundRequired, reason: reason ?? null },
+  });
   res.json({ success: true, data });
 }));
 
@@ -150,6 +189,13 @@ router.get("/payments/needs-refund", handle(async (req, res) => {
 router.post("/payments/:id/retry-refund", handle(async (req, res) => {
   const { id } = parse(idParam, req.params);
   const data = await refunds.retryPaymentRefund(req.user!.sub, id);
+  await audit(req, {
+    action: "payment.retry_refund",
+    targetType: "payment",
+    targetId: id,
+    summary: `Retried the refund of a payment: ${data.outcome}`,
+    metadata: { outcome: data.outcome },
+  });
   res.json({ success: true, data });
 }));
 
@@ -158,6 +204,13 @@ router.post("/payments/:id/resolve-refund", handle(async (req, res) => {
   const { id } = parse(idParam, req.params);
   const { note } = parse(noteBody, req.body ?? {});
   const data = await refunds.resolveRefundPayment(req.user!.sub, id, note);
+  await audit(req, {
+    action: "payment.resolve_refund",
+    targetType: "payment",
+    targetId: id,
+    summary: "Marked a payment as refunded by hand",
+    metadata: { note: note ?? null },
+  });
   res.json({ success: true, data });
 }));
 

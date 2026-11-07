@@ -11,6 +11,7 @@ import { logger } from "../../utils/logger";
 import { skipTake, Pagination } from "../../utils/pagination";
 import { releaseStock } from "../orders/orders.service";
 import { notifyOrderRefunded } from "../notifications/notifications.service";
+import { postRefundEntries } from "../finance/ledger.service";
 import { refundPaystackPayment } from "./paystack.service";
 
 const isFlagged = (value: unknown) => toJsonObject(value).needsRefund === true;
@@ -138,6 +139,7 @@ export async function refundOrder(adminId: string, orderId: string, reason?: str
   }
 
   background(notifyOrderRefunded(order.id), "refund email");
+  background(postRefundEntries(order.id), "ledger: refund entries");
 
   return {
     orderId: order.id,

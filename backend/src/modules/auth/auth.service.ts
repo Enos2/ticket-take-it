@@ -61,7 +61,7 @@ interface MailUser {
 
 async function deliverVerification(user: MailUser, token: string) {
   const url = appLink(`/verify-email?token=${encodeURIComponent(token)}`);
-  await sendEmail({ to: user.email, ...verifyEmailEmail(user.fullName, url) });
+  await sendEmail({ to: user.email, ...verifyEmailEmail(user.fullName, url) }, { persist: false });
 }
 
 async function sendVerificationEmail(user: MailUser) {
@@ -74,7 +74,7 @@ async function sendPasswordResetEmail(user: MailUser) {
   if (!token) return;
 
   const url = appLink(`/reset-password?token=${encodeURIComponent(token)}`);
-  await sendEmail({ to: user.email, ...resetPasswordEmail(user.fullName, url) });
+  await sendEmail({ to: user.email, ...resetPasswordEmail(user.fullName, url) }, { persist: false });
 }
 
 // ---------------------------------------------------------------- accounts

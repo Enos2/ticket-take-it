@@ -23,6 +23,25 @@ enum EventCategory {
   OTHER
 }
 
+enum LedgerType {
+  SALE
+  FEE
+  REFUND
+  FEE_REFUND
+  PAYOUT
+}
+
+enum PayoutMethod {
+  MPESA
+  BANK
+  OTHER
+}
+enum EmailStatus {
+  PENDING
+  SENT
+  FAILED
+}
+
 enum Role {
   USER
   SELLER
@@ -143,11 +162,15 @@ model SellerProfile {
   businessPhone String?
   payoutMethod  String?
   payoutDetails String?
+  payoutUpdatedAt DateTime?
+  feeBps        Int?
   status        SellerStatus @default(PENDING)
   approvedAt    DateTime?
   createdAt     DateTime     @default(now())
   updatedAt     DateTime     @updatedAt
   events        Event[]
+  ledgerEntries LedgerEntry[]
+  payouts       Payout[]
 }
 
 model Event {
@@ -219,6 +242,7 @@ model Order {
   updatedAt            DateTime    @updatedAt
   items                OrderItem[]
   payments             Payment[]
+  ledgerEntries        LedgerEntry[]
   tickets              Ticket[]
 
   @@index([userId])
@@ -285,3 +309,78 @@ model Payment {
 // ==========================================
 // END OF FILE: backend/prisma/schema.prisma
 // ==========================================
+// Every movement of a seller's money. Positive adds to what the seller is owed, negative takes away.
+model LedgerEntry {
+  id          String        @id @default(cuid())
+  sellerId    String
+  seller      SellerProfile @relation(fields: [sellerId], references: [id])
+  orderId     String?
+  order       Order?        @relation(fields: [orderId], references: [id])
+  payoutId    String?
+  payout      Payout?       @relation(fields: [payoutId], references: [id])
+  type        LedgerType
+  amountCents Int
+  currency    String
+  feeBps      Int? // the commission rate that was used, kept for the record
+  availableAt DateTime // from this moment the entry counts as money that can be paid out
+  description String?
+  createdById String?
+  createdAt   DateTime      @default(now())
+
+  @@unique([orderId, sellerId, type]) // an order can only be posted once per seller and type
+  @@index([sellerId, currency, availableAt])
+  @@index([orderId])
+}
+
+// A payment from the platform to a seller, recorded after the money was sent.
+model Payout {
+  id            String        @id @default(cuid())
+  sellerId      String
+  seller        SellerProfile @relation(fields: [sellerId], references: [id])
+  amountCents   Int
+  currency      String
+  method        PayoutMethod
+  reference     String? // for example the M-Pesa receipt
+  note          String?
+  paidById      String
+  createdAt     DateTime      @default(now())
+  ledgerEntries LedgerEntry[]
+
+  @@index([sellerId, createdAt])
+}
+// Emails waiting to be sent, or that could not be sent. The text of an email that was sent is wiped.
+model EmailOutbox {
+  id            String      @id @default(cuid())
+  toEmail       String
+  subject       String
+  html          String
+  text          String
+  status        EmailStatus @default(PENDING)
+  attempts      Int         @default(0)
+  nextAttemptAt DateTime    @default(now())
+  lastError     String?
+  createdAt     DateTime    @default(now())
+  sentAt        DateTime?
+
+  @@index([status, nextAttemptAt])
+}
+
+// A permanent record of who did what. It has no links to other tables, so it survives deleted accounts.
+model AuditLog {
+  id         String   @id @default(cuid())
+  actorId    String?
+  actorEmail String?
+  actorRole  String?
+  action     String // for example "event.approve"
+  targetType String?
+  targetId   String?
+  summary    String
+  metadata   Json?
+  ip         String?
+  createdAt  DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([targetType, targetId])
+  @@index([actorId])
+  @@index([action])
+}

@@ -6,6 +6,7 @@ import { Request, Response, NextFunction } from "express";
 import { Prisma } from "@prisma/client";
 import { ApiError } from "../utils/ApiError";
 import { logger } from "../utils/logger";
+import { captureError } from "../utils/monitoring";
 import { env } from "../config/env";
 
 export function notFoundHandler(req: Request, _res: Response, next: NextFunction) {
@@ -31,7 +32,10 @@ export function errorHandler(err: unknown, _req: Request, res: Response, next: N
   if (res.headersSent) return next(err);
 
   if (err instanceof ApiError) {
-    if (err.statusCode >= 500) logger.error({ err }, err.message);
+    if (err.statusCode >= 500) {
+      logger.error({ err }, err.message);
+      captureError(err);
+    }
     return send(res, err.statusCode, err.message);
   }
 
@@ -58,10 +62,12 @@ export function errorHandler(err: unknown, _req: Request, res: Response, next: N
   // Database unreachable (for example a Neon cold start or outage).
   if (err instanceof Prisma.PrismaClientInitializationError) {
     logger.error({ err }, "Database connection failed");
+    captureError(err, { kind: "database" });
     return send(res, 503, "Service temporarily unavailable. Please try again.");
   }
 
   logger.error({ err }, "Unhandled error");
+  captureError(err);
   const message = env.NODE_ENV === "production" ? "Internal server error" : (err as Error)?.message;
   return send(res, 500, message ?? "Internal server error");
 }

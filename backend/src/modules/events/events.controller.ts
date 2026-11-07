@@ -7,6 +7,7 @@ import * as service from "./events.service";
 import * as moderation from "./moderation.service";
 import { ApiError } from "../../utils/ApiError";
 import { parse } from "../../utils/parse";
+import { audit } from "../system/audit.service";
 import { listEventsQuerySchema, eventSlugParamSchema, eventIdParamSchema } from "./events.schema";
 
 export async function create(req: Request, res: Response, next: NextFunction) {
@@ -104,6 +105,7 @@ export async function cancel(req: Request, res: Response, next: NextFunction) {
     if (!req.user) throw ApiError.unauthorized();
     const { eventId } = parse(eventIdParamSchema, req.params);
     const data = await service.cancelEvent(req.user.sub, req.user.role, eventId);
+    await audit(req, { action: "event.cancel", targetType: "event", targetId: eventId, summary: `Cancelled event "${data.event.title}"` });
     res.json({ success: true, data });
   } catch (err) {
     next(err);
@@ -115,6 +117,7 @@ export async function remove(req: Request, res: Response, next: NextFunction) {
     if (!req.user) throw ApiError.unauthorized();
     const { eventId } = parse(eventIdParamSchema, req.params);
     await service.deleteEvent(req.user.sub, req.user.role, eventId);
+    await audit(req, { action: "event.delete", targetType: "event", targetId: eventId, summary: "Deleted an event" });
     res.json({ success: true });
   } catch (err) {
     next(err);

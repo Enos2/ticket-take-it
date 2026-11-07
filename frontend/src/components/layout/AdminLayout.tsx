@@ -56,8 +56,17 @@ export default function AdminLayout() {
           Refunds
           <Count value={stats.data?.paymentsNeedingRefund} />
         </NavLink>
+        <NavLink to="/admin/payouts" className={tabClass}>
+          Payouts
+        </NavLink>
         <NavLink to="/admin/users" className={tabClass}>
           Users
+        </NavLink>
+        <NavLink to="/admin/audit" className={tabClass}>
+          Audit log
+        </NavLink>
+        <NavLink to="/admin/system" className={tabClass}>
+          System
         </NavLink>
       </nav>
 

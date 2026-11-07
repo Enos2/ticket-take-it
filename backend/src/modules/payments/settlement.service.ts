@@ -10,6 +10,7 @@ import { toJsonObject } from "../../utils/json";
 import { logger } from "../../utils/logger";
 import { issueTicketsForOrder } from "../orders/fulfillment.service";
 import { notifyOrderPaid } from "../notifications/notifications.service";
+import { postSaleEntries } from "../finance/ledger.service";
 
 export interface WebhookInput {
   reference: string; // order reference
@@ -183,6 +184,7 @@ async function processWebhook(input: WebhookInput): Promise<WebhookResult | "ret
     });
 
     background(notifyOrderPaid(order.id), "order confirmation email");
+    background(postSaleEntries(order.id), "ledger: sale entries");
     return "processed";
   } catch (err) {
     if (err instanceof StatusChangedError) return "retry";

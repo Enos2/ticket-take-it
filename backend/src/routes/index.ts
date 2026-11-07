@@ -13,6 +13,9 @@ import ordersRoutes from "../modules/orders/orders.routes";
 import paymentsRoutes from "../modules/payments/payments.routes";
 import checkinRoutes from "../modules/checkin/checkin.routes";
 import adminRoutes from "../modules/admin/admin.routes";
+import financeRoutes from "../modules/finance/finance.routes";
+import systemRoutes from "../modules/system/system.routes";
+import receiptsRoutes from "../modules/orders/receipts.routes";
 
 const router = Router();
 
@@ -24,6 +27,9 @@ router.use("/orders", ordersRoutes);
 router.use("/payments", paymentsRoutes);
 router.use("/checkin", checkinRoutes);
 router.use("/admin", adminRoutes);
+router.use("/finance", financeRoutes);
+router.use("/system", systemRoutes);
+router.use("/receipts", receiptsRoutes);
 
 export default router;
 
