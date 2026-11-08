@@ -15,6 +15,7 @@ export interface RegisterInput {
   email: string;
   password: string;
   phone?: string;
+  acceptedTerms?: boolean;
 }
 
 interface AuthState {

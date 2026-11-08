@@ -93,6 +93,7 @@ export async function register(input: RegisterInput) {
         passwordHash: await hashPassword(input.password),
         fullName: input.fullName,
         phone: input.phone,
+        termsAcceptedAt: input.acceptedTerms ? new Date() : null,
       },
     });
   } catch (err) {

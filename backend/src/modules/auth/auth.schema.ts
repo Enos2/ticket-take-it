@@ -25,6 +25,7 @@ export const registerSchema = z.object({
   email,
   password: strongPassword,
   fullName: z.string().trim().min(2).max(120),
+  acceptedTerms: z.boolean().optional(),
   phone: z
     .string()
     .trim()

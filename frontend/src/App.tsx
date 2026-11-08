@@ -22,6 +22,11 @@ const VerifyEmail = lazy(() => import("./pages/public/VerifyEmail"));
 const ForgotPassword = lazy(() => import("./pages/public/ForgotPassword"));
 const ResetPassword = lazy(() => import("./pages/public/ResetPassword"));
 const NotFound = lazy(() => import("./pages/public/NotFound"));
+const Terms = lazy(() => import("./pages/public/Terms"));
+const Privacy = lazy(() => import("./pages/public/Privacy"));
+const Refunds = lazy(() => import("./pages/public/Refunds"));
+const Help = lazy(() => import("./pages/public/Help"));
+const Settings = lazy(() => import("./pages/user/Settings"));
 
 const Checkout = lazy(() => import("./pages/user/Checkout"));
 const CheckoutComplete = lazy(() => import("./pages/user/CheckoutComplete"));
@@ -76,6 +81,10 @@ export default function App() {
           <Route path="verify-email" element={<VerifyEmail />} />
           <Route path="forgot-password" element={<ForgotPassword />} />
           <Route path="reset-password" element={<ResetPassword />} />
+          <Route path="terms" element={<Terms />} />
+          <Route path="privacy" element={<Privacy />} />
+          <Route path="refunds" element={<Refunds />} />
+          <Route path="help" element={<Help />} />
 
           {/* signed-in people only */}
           <Route element={<ProtectedRoute />}>
@@ -89,6 +98,7 @@ export default function App() {
               <Route index element={<Navigate to="tickets" replace />} />
               <Route path="tickets" element={<MyTickets />} />
               <Route path="orders" element={<MyOrders />} />
+              <Route path="settings" element={<Settings />} />
               <Route path="orders/:orderId" element={<OrderDetail />} />
               <Route path="orders/:orderId/receipt" element={<Receipt />} />
             </Route>

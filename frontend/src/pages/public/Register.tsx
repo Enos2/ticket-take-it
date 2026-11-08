@@ -1,6 +1,6 @@
 // ==========================================
 // FILE: frontend/src/pages/public/Register.tsx
-// PURPOSE: Create an account.
+// PURPOSE: Create an account. Needs agreement to the terms.
 // ==========================================
 import { useState } from "react";
 import type { FormEvent } from "react";
@@ -24,6 +24,8 @@ const RULES = [
   { label: "At most 72 bytes", test: (p: string) => new TextEncoder().encode(p).length <= 72 },
 ];
 
+const link = "font-semibold text-gold underline-offset-4 hover:underline";
+
 export default function Register() {
   useTitle("Create account");
 
@@ -34,13 +36,14 @@ export default function Register() {
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
+  const [agreed, setAgreed] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   if (status === "authenticated") return <Navigate to="/" replace />;
 
   const passwordOk = RULES.every((rule) => rule.test(password));
-  const canSubmit = fullName.trim().length >= 2 && email.includes("@") && passwordOk;
+  const canSubmit = fullName.trim().length >= 2 && email.includes("@") && passwordOk && agreed;
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
@@ -53,6 +56,7 @@ export default function Register() {
         email: email.trim(),
         password,
         phone: phone.trim() || undefined,
+        acceptedTerms: true,
       });
     } catch (err) {
       setError(errorMessage(err));
@@ -101,6 +105,21 @@ export default function Register() {
             </ul>
           </div>
 
+          <label className="flex cursor-pointer items-start gap-3 text-sm text-muted">
+            <input type="checkbox" checked={agreed} onChange={(e) => setAgreed(e.target.checked)} className="mt-0.5 size-4 shrink-0 accent-brand" />
+            <span>
+              I agree to the{" "}
+              <Link to="/terms" target="_blank" className={link}>
+                Terms of Service
+              </Link>{" "}
+              and have read the{" "}
+              <Link to="/privacy" target="_blank" className={link}>
+                Privacy Policy
+              </Link>
+              .
+            </span>
+          </label>
+
           <Button type="submit" size="lg" className="w-full" loading={busy} disabled={!canSubmit}>
             Create account
           </Button>
@@ -109,7 +128,7 @@ export default function Register() {
 
       <p className="mt-6 text-center text-sm text-muted">
         Already have an account?{" "}
-        <Link to="/login" className="font-semibold text-gold underline-offset-4 hover:underline">
+        <Link to="/login" className={link}>
           Sign in
         </Link>
       </p>
