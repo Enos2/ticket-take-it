@@ -9,7 +9,7 @@ let enabled = false;
 
 export function initMonitoring(): void {
   if (!env.SENTRY_DSN || enabled) return;
-  Sentry.init({ dsn: env.SENTRY_DSN, environment: env.NODE_ENV, sendDefaultPii: false });
+  Sentry.init({ dsn: env.SENTRY_DSN, environment: env.NODE_ENV }); // personal data is not sent by default
   enabled = true;
 }
 
