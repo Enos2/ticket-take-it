@@ -68,7 +68,7 @@ export const doorApi = {
 
   // door setup for one event
   eventDoor: (eventId: string) => api.get<EventDoorConfig>(`/seller/events/${eventId}/door`),
-  saveGates: (eventId: string, gates: string[]) => api.put(`/seller/events/${eventId}/door/gates`, { gates }),
+  saveGates: (eventId: string, gates: string[]) => api.patch(`/seller/events/${eventId}/door/gates`, { gates }),
   assignStaff: (eventId: string, staffId: string, gate: string | null) =>
     api.post(`/seller/events/${eventId}/door/staff`, { staffId, gate }),
   unassignStaff: (eventId: string, staffId: string) => api.delete(`/seller/events/${eventId}/door/staff/${staffId}`),
