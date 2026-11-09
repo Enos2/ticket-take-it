@@ -20,6 +20,7 @@ const JOB_NAME: Record<string, string> = {
   reconcilePayments: "Check pending payments",
   reconcileLedger: "Post sales to the ledger",
   processEmailOutbox: "Retry failed emails",
+  sendEventReminders: "Send event reminders",
   cleanupExpiredTokens: "Clear expired sign-in links",
 };
 

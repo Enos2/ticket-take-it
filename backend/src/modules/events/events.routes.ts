@@ -1,6 +1,6 @@
 // ==========================================
 // FILE: backend/src/modules/events/events.routes.ts
-// PURPOSE: Routes for events, including search, duplication and nested ticket routes.
+// PURPOSE: Routes for events: search, discovery, management, duplication and nested ticket routes.
 // ==========================================
 import { Router, Request, Response, NextFunction } from "express";
 import { z } from "zod";
@@ -24,15 +24,17 @@ const duplicateBody = z.object({
   endsAt: z.string().datetime({ offset: true }),
 });
 
-// Public: search and filter live events
+// Public: search, discovery and the event page. The fixed paths must stay above /:slug.
 router.get("/", discovery.search);
-router.get("/filters", discovery.filters); // must stay above /:slug
+router.get("/filters", discovery.filters);
+router.get("/trending", discovery.trending);
+router.get("/lookup", discovery.lookup);
 
 // Nested route: /events/:eventId/tickets
 router.use("/:eventId/tickets", ticketRoutes);
 
-// Event detail by slug: /events/:slug
-router.get("/:slug", controller.getBySlug);
+router.get("/:slug/similar", discovery.similar);
+router.get("/:slug", discovery.detail);
 
 // Seller / admin management
 router.post("/", ...manage, validate(createEventSchema), controller.create);

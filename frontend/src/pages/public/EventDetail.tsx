@@ -1,10 +1,15 @@
 // ==========================================
 // FILE: frontend/src/pages/public/EventDetail.tsx
-// PURPOSE: One event: details and ticket selection.
+// PURPOSE: One event: details, organiser, save and share, ticket selection and similar events.
 // ==========================================
+import { useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useParams } from "react-router-dom";
 import { ArrowLeft, CalendarDays, CalendarX2, MapPin } from "lucide-react";
+import EventCard from "../../components/EventCard";
+import FollowButton from "../../components/FollowButton";
+import HeartButton from "../../components/HeartButton";
+import ShareButton from "../../components/ShareButton";
 import TicketPicker from "../../components/TicketPicker";
 import Alert from "../../components/ui/Alert";
 import Card from "../../components/ui/Card";
@@ -13,6 +18,7 @@ import { PageSpinner } from "../../components/ui/Spinner";
 import { buttonClasses } from "../../components/ui/styles";
 import { ApiRequestError, api, errorMessage } from "../../lib/api";
 import { formatDate, formatTime } from "../../lib/format";
+import { recordView } from "../../lib/recent";
 import { useTitle } from "../../lib/useTitle";
 import type { EventSummary } from "../../lib/types";
 
@@ -25,8 +31,20 @@ export default function EventDetail() {
     enabled: Boolean(slug),
   });
 
+  const similar = useQuery({
+    queryKey: ["events", "similar", slug],
+    queryFn: () => api.get<EventSummary[]>(`/events/${slug}/similar`),
+    enabled: Boolean(slug) && query.isSuccess,
+  });
+
   const event = query.data;
   useTitle(event?.title);
+
+  // Remember it for "Recently viewed" on the home page.
+  const viewed = event?.slug;
+  useEffect(() => {
+    if (viewed) recordView(viewed);
+  }, [viewed]);
 
   if (query.isPending) return <PageSpinner />;
 
@@ -53,6 +71,7 @@ export default function EventDetail() {
   }
 
   const tickets = event.ticketTypes.filter((t) => t.isActive);
+  const related = similar.data ?? [];
 
   return (
     <article className="mx-auto max-w-6xl px-4 py-8 sm:px-6 sm:py-12">
@@ -76,6 +95,21 @@ export default function EventDetail() {
         <div className="lg:col-span-2">
           <h1 className="text-3xl leading-tight font-extrabold text-fg sm:text-4xl">{event.title}</h1>
 
+          {event.seller ? (
+            <p className="mt-2 text-sm text-muted">
+              By{" "}
+              <Link to={`/organizers/${event.seller.id}`} className="font-semibold text-gold underline-offset-4 hover:underline">
+                {event.seller.businessName}
+              </Link>
+            </p>
+          ) : null}
+
+          <div className="mt-5 flex flex-wrap items-center gap-2">
+            <HeartButton eventId={event.id} title={event.title} withLabel />
+            <ShareButton title={event.title} path={`/events/${event.slug}`} />
+            {event.seller ? <FollowButton sellerId={event.seller.id} name={event.seller.businessName} /> : null}
+          </div>
+
           <h2 className="mt-8 mb-2 text-sm font-semibold tracking-widest text-gold uppercase">About this event</h2>
           <p className="text-base leading-relaxed whitespace-pre-line text-muted">{event.description}</p>
 
@@ -89,7 +123,7 @@ export default function EventDetail() {
 
         {/* details */}
         <aside>
-          <Card className="space-y-5 p-6 lg:sticky lg:top-28">
+          <Card className="space-y-5 p-6 lg:sticky lg:top-20">
             <div className="flex gap-3">
               <CalendarDays className="mt-0.5 size-5 shrink-0 text-gold" aria-hidden="true" />
               <div>
@@ -111,6 +145,17 @@ export default function EventDetail() {
           </Card>
         </aside>
       </div>
+
+      {related.length > 0 ? (
+        <section className="mt-16" aria-label="Similar events">
+          <h2 className="mb-6 text-2xl font-bold text-fg">More like this</h2>
+          <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
+            {related.map((e) => (
+              <EventCard key={e.id} event={e} />
+            ))}
+          </div>
+        </section>
+      ) : null}
     </article>
   );
 }

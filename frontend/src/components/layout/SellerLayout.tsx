@@ -111,7 +111,10 @@ export default function SellerLayout() {
         <NavLink to="/seller/earnings" className={tabClass}>
           Earnings
         </NavLink>
-        <NavLink to="/seller/scan" className={tabClass}>
+        <NavLink to="/seller/door" className={tabClass}>
+          Door team
+        </NavLink>
+        <NavLink to="/scan" className={tabClass}>
           <span className="inline-flex items-center gap-1.5">
             <QrCode className="size-4" aria-hidden="true" />
             Scan tickets

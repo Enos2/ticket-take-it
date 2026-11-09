@@ -9,6 +9,7 @@ import { ApiError } from "../../utils/ApiError";
 import { logger } from "../../utils/logger";
 import { hashPassword, verifyPassword } from "../../utils/password";
 import type { UpdateProfileInput } from "./users.schema";
+import { isDoorStaff } from "../door/door.service";
 
 const profileSelect = {
   id: true,
@@ -24,7 +25,7 @@ const profileSelect = {
 export async function getProfile(userId: string) {
   const user = await prisma.user.findUnique({ where: { id: userId }, select: profileSelect });
   if (!user) throw ApiError.notFound("User not found");
-  return user;
+  return { ...user, doorStaff: await isDoorStaff(user.id, user.email, user.emailVerified) };
 }
 
 export async function updateProfile(userId: string, input: UpdateProfileInput) {
@@ -88,6 +89,7 @@ export async function deleteAccount(userId: string, password: string) {
 
   await prisma.$transaction(async (tx) => {
     await tx.refreshToken.deleteMany({ where: { userId } });
+    await tx.staffMember.updateMany({ where: { revokedAt: null, OR: [{ userId }, { email: user.email.toLowerCase() }] }, data: { revokedAt: now } });
     await tx.emailToken.deleteMany({ where: { userId } });
     await tx.emailOutbox.deleteMany({ where: { toEmail: user.email } });
     await tx.auditLog.updateMany({ where: { actorId: userId }, data: { actorEmail: null, ip: null } });
@@ -98,6 +100,7 @@ export async function deleteAccount(userId: string, password: string) {
     });
 
     if (sellerId) {
+      await tx.staffMember.updateMany({ where: { sellerId, revokedAt: null }, data: { revokedAt: now } });
       await tx.event.deleteMany({ where: { sellerId, status: { in: ["DRAFT", "REJECTED"] } } }); // never went on sale
       await tx.sellerProfile.update({
         where: { id: sellerId },

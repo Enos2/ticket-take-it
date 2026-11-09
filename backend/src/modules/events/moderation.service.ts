@@ -9,6 +9,7 @@ import { logger } from "../../utils/logger";
 import { getManagedEvent } from "./event.access";
 import { background } from "../../utils/background";
 import { notifyEventReview } from "../notifications/reviewNotifications.service";
+import { notifyFollowersOfNewEvent } from "../engagement/reminders.service";
 
 const SUBMITTABLE: EventStatus[] = ["DRAFT", "REJECTED"];
 const LIVE: EventStatus[] = ["PUBLISHED", "SOLD_OUT"];
@@ -71,6 +72,7 @@ export async function submitEvent(userId: string, role: Role, eventId: string) {
         : { status: "PENDING_REVIEW", submittedAt: now, reviewedAt: null, reviewedById: null, reviewNote: null },
   });
   if (moved.count === 0) throw ApiError.conflict("The event changed while submitting. Please refresh.");
+  if (role === "ADMIN") background(notifyFollowersOfNewEvent(eventId), "followers: new event emails");
 
   return await reload(eventId);
 }
@@ -114,6 +116,7 @@ export async function approveEvent(adminId: string, eventId: string) {
   if (moved.count === 0) throw ApiError.conflict("The event changed while approving. Please refresh.");
 
   logger.info(`Event ${eventId} approved by admin ${adminId}`); background(notifyEventReview(eventId, "APPROVED"), "event review email");
+  background(notifyFollowersOfNewEvent(eventId), "followers: new event emails");
   return await reload(eventId);
 }
 

@@ -34,6 +34,7 @@ export interface User {
   emailVerified: boolean;
   createdAt: string;
   sellerProfile: SellerSummary | null;
+  doorStaff?: boolean; // works the door for an organizer
 }
 
 export interface AuthResult {
@@ -78,6 +79,7 @@ export interface EventSummary extends EventBrief {
   category: EventCategory;
   bannerUrl: string | null;
   ticketTypes: TicketType[];
+  seller?: { id: string; businessName: string };
   // Only sellers and admins receive these.
   reviewNote?: string | null; // why the event was rejected or taken down
   submittedAt?: string | null;
@@ -237,6 +239,7 @@ export interface CheckInResult {
   ticketType: string;
   holder: string;
   checkedInAt: string;
+  gate: string | null;
 }
 // ==========================================
 // END OF FILE: frontend/src/lib/types.ts

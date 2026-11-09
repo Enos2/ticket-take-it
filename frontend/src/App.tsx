@@ -27,6 +27,8 @@ const Privacy = lazy(() => import("./pages/public/Privacy"));
 const Refunds = lazy(() => import("./pages/public/Refunds"));
 const Help = lazy(() => import("./pages/public/Help"));
 const Settings = lazy(() => import("./pages/user/Settings"));
+const SavedEvents = lazy(() => import("./pages/user/SavedEvents"));
+const Organizer = lazy(() => import("./pages/public/Organizer"));
 
 const Checkout = lazy(() => import("./pages/user/Checkout"));
 const CheckoutComplete = lazy(() => import("./pages/user/CheckoutComplete"));
@@ -43,7 +45,10 @@ const EventOverview = lazy(() => import("./pages/seller/EventOverview"));
 const EventTickets = lazy(() => import("./pages/seller/EventTickets"));
 const EventEdit = lazy(() => import("./pages/seller/EventEdit"));
 const EventAttendees = lazy(() => import("./pages/seller/EventAttendees"));
-const Scanner = lazy(() => import("./pages/seller/Scanner"));
+const Scan = lazy(() => import("./pages/user/Scan"));
+const LiveAttendance = lazy(() => import("./pages/user/LiveAttendance"));
+const DoorTeam = lazy(() => import("./pages/seller/DoorTeam"));
+const EventDoor = lazy(() => import("./pages/seller/EventDoor"));
 const SellerOrders = lazy(() => import("./pages/seller/SellerOrders"));
 const SellerEarnings = lazy(() => import("./pages/seller/SellerEarnings"));
 
@@ -85,10 +90,13 @@ export default function App() {
           <Route path="privacy" element={<Privacy />} />
           <Route path="refunds" element={<Refunds />} />
           <Route path="help" element={<Help />} />
+          <Route path="organizers/:id" element={<Organizer />} />
 
           {/* signed-in people only */}
           <Route element={<ProtectedRoute />}>
             <Route path="checkout/complete" element={<CheckoutComplete />} />
+            <Route path="scan" element={<Scan />} />
+            <Route path="scan/:eventId/live" element={<LiveAttendance />} />
             <Route path="checkout/:orderId" element={<Checkout />} />
 
             {/* order confirmation emails link here */}
@@ -99,6 +107,7 @@ export default function App() {
               <Route path="tickets" element={<MyTickets />} />
               <Route path="orders" element={<MyOrders />} />
               <Route path="settings" element={<Settings />} />
+              <Route path="saved" element={<SavedEvents />} />
               <Route path="orders/:orderId" element={<OrderDetail />} />
               <Route path="orders/:orderId/receipt" element={<Receipt />} />
             </Route>
@@ -107,7 +116,8 @@ export default function App() {
             <Route path="seller/apply" element={<SellerApply />} />
             <Route path="seller" element={<SellerLayout />}>
               <Route index element={<SellerDashboard />} />
-              <Route path="scan" element={<Scanner />} />
+              <Route path="scan" element={<Navigate to="/scan" replace />} />
+              <Route path="door" element={<DoorTeam />} />
               <Route path="orders" element={<SellerOrders />} />
               <Route path="earnings" element={<SellerEarnings />} />
               <Route path="events/new" element={<CreateEvent />} />
@@ -116,6 +126,7 @@ export default function App() {
                 <Route path="tickets" element={<EventTickets />} />
                 <Route path="details" element={<EventEdit />} />
                 <Route path="attendees" element={<EventAttendees />} />
+                <Route path="door" element={<EventDoor />} />
               </Route>
             </Route>
           </Route>

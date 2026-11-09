@@ -26,6 +26,7 @@ export default function Privacy() {
             "Your activity: the tickets you reserve and buy, your orders, and your check-ins at events.",
             "Payments: the amount, the date and the payment provider's reference for each payment. Your full card number and M-Pesa PIN never reach our servers. For M-Pesa we keep a masked version of your number.",
             "If you are an organiser: your business name, email and phone, your payout details (M-Pesa number or bank account), and the record of your sales, commission and payouts.",
+            "If an organiser adds you to their door team, they give us your email address so you can scan tickets at their events. The scans you make are recorded with your account.",
             "Technical information: your IP address and basic details about requests, to keep the service secure. If the site crashes in your browser, a short report is sent to us with the error and the page path.",
           ]}
         />
@@ -35,7 +36,7 @@ export default function Privacy() {
         <Bullets
           items={[
             "To run the service: take payments, issue tickets, let organisers admit you at the door.",
-            "To email you about your account and orders: confirmations, refunds, cancellations and security messages. We do not send marketing emails.",
+            "To email you about your account and orders: confirmations, refunds, cancellations and security messages. If you hold tickets, we also send a reminder before the event, and if you follow an organiser, we tell you when they put a new event on sale. You can switch those two off in Settings. We do not send marketing emails.",
             "To keep people safe: prevent fraud, abuse and duplicate tickets.",
             "To meet legal and accounting duties.",
           ]}

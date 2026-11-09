@@ -1,11 +1,13 @@
 // ==========================================
 // FILE: frontend/src/pages/public/Home.tsx
-// PURPOSE: Landing page: hero, the next few events and what makes the platform different.
+// PURPOSE: Landing page: hero, trending events, the next few events, recently viewed and what makes the platform different.
 // ==========================================
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { ArrowRight, BadgeCheck, QrCode, ShieldCheck } from "lucide-react";
+import EventCard from "../../components/EventCard";
 import EventGrid from "../../components/EventGrid";
+import RecentlyViewed from "../../components/RecentlyViewed";
 import { buttonClasses } from "../../components/ui/styles";
 import { api } from "../../lib/api";
 import { useTitle } from "../../lib/useTitle";
@@ -32,13 +34,19 @@ const HIGHLIGHTS = [
 export default function Home() {
   useTitle();
 
-  const query = useQuery({
+  const upcoming = useQuery({
     queryKey: ["events", "preview"],
     queryFn: () => api.list<EventSummary>("/events?page=1&limit=6"),
   });
 
-  const events = query.data?.items ?? [];
-  const hasMore = (query.data?.meta.total ?? 0) > events.length;
+  const trending = useQuery({
+    queryKey: ["events", "trending"],
+    queryFn: () => api.get<EventSummary[]>("/events/trending"),
+  });
+
+  const events = upcoming.data?.items ?? [];
+  const hasMore = (upcoming.data?.meta.total ?? 0) > events.length;
+  const hot = (trending.data ?? []).slice(0, 4);
 
   return (
     <>
@@ -63,6 +71,21 @@ export default function Home() {
         </div>
       </section>
 
+      {/* trending: only shown once people have been buying */}
+      {hot.length > 0 ? (
+        <section className="mx-auto max-w-6xl px-4 pt-14 sm:px-6" aria-label="Trending events">
+          <div className="mb-8">
+            <h2 className="text-2xl font-bold text-fg sm:text-3xl">Trending this week</h2>
+            <p className="mt-1 text-sm text-muted">The events selling the most tickets right now.</p>
+          </div>
+          <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
+            {hot.map((event) => (
+              <EventCard key={event.id} event={event} />
+            ))}
+          </div>
+        </section>
+      ) : null}
+
       {/* upcoming */}
       <section className="mx-auto max-w-6xl px-4 py-14 sm:px-6">
         <div className="mb-8 flex items-end justify-between gap-4">
@@ -80,9 +103,9 @@ export default function Home() {
 
         <EventGrid
           events={events}
-          loading={query.isPending}
-          error={query.isError ? query.error : null}
-          onRetry={() => void query.refetch()}
+          loading={upcoming.isPending}
+          error={upcoming.isError ? upcoming.error : null}
+          onRetry={() => void upcoming.refetch()}
         />
 
         {hasMore ? (
@@ -93,6 +116,8 @@ export default function Home() {
           </div>
         ) : null}
       </section>
+
+      <RecentlyViewed />
 
       {/* why */}
       <section className="border-t border-line bg-panel/40">

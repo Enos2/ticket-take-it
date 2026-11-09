@@ -109,6 +109,7 @@ enum EmailTokenType {
 }
 
 model User {
+  staffRoles StaffMember[]
   id            String         @id @default(cuid())
   email         String         @unique
   passwordHash  String
@@ -118,6 +119,8 @@ model User {
   emailVerified Boolean        @default(false)
   termsAcceptedAt DateTime?
   deletedAt     DateTime?
+  notifyReminders Boolean      @default(true)
+  notifyNewEvents Boolean      @default(true)
   isActive      Boolean        @default(true)
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
@@ -126,6 +129,8 @@ model User {
   tickets       Ticket[]
   refreshTokens RefreshToken[]
   emailTokens   EmailToken[]
+  favorites     Favorite[]
+  follows       Follow[]
 
   @@index([email])
 }
@@ -156,6 +161,7 @@ model EmailToken {
 }
 
 model SellerProfile {
+  staff StaffMember[]
   id            String       @id @default(cuid())
   userId        String       @unique
   user          User         @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -173,9 +179,11 @@ model SellerProfile {
   events        Event[]
   ledgerEntries LedgerEntry[]
   payouts       Payout[]
+  followers     Follow[]
 }
 
 model Event {
+  gates Gate[]
   id           String        @id @default(cuid())
   sellerId     String
   seller       SellerProfile @relation(fields: [sellerId], references: [id], onDelete: Cascade)
@@ -191,6 +199,8 @@ model Event {
   status       EventStatus   @default(DRAFT)
   category     EventCategory @default(OTHER)
   submittedAt  DateTime? // when the seller last sent it for review
+  announcedAt  DateTime? // when followers were told about it
+  favorites    Favorite[]
   reviewedAt   DateTime? // when an admin last decided
   reviewedById String? // the admin who decided
   reviewNote   String? // why it was rejected or taken down
@@ -269,6 +279,8 @@ model OrderItem {
 
 // One row per admitted person. `code` is a random secret that goes in the QR.
 model Ticket {
+  gateId String?
+  gate   Gate?   @relation(fields: [gateId], references: [id], onDelete: SetNull)
   id            String       @id @default(cuid())
   code          String       @unique
   orderId       String
@@ -385,4 +397,65 @@ model AuditLog {
   @@index([targetType, targetId])
   @@index([actorId])
   @@index([action])
+}
+// Events a person has saved.
+model Favorite {
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  eventId   String
+  event     Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@id([userId, eventId])
+  @@index([eventId])
+}
+
+// Organisers a person follows.
+model Follow {
+  userId    String
+  user      User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sellerId  String
+  seller    SellerProfile @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  createdAt DateTime      @default(now())
+
+  @@id([userId, sellerId])
+  @@index([sellerId])
+}
+
+// Remembers who has already had the reminder for an event, so nobody gets it twice.
+model EventReminder {
+  eventId String
+  userId  String
+  sentAt  DateTime @default(now())
+
+  @@id([eventId, userId])
+}
+// People an organiser has added to their door team. They can scan tickets and watch live attendance, nothing else.
+model StaffMember {
+  id        String        @id @default(cuid())
+  sellerId  String
+  seller    SellerProfile @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  email     String // always lowercase
+  userId    String? // filled in once a verified account with this email exists
+  user      User?         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  addedById String
+  createdAt DateTime      @default(now())
+  revokedAt DateTime?
+
+  @@unique([sellerId, email])
+  @@index([userId])
+  @@index([email])
+}
+
+// A named entrance for one event. An empty allowedTiers list admits every ticket type.
+model Gate {
+  id           String       @id @default(cuid())
+  eventId      String
+  event        Event        @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  name         String
+  allowedTiers TicketTier[] @default([])
+  createdAt    DateTime     @default(now())
+  tickets      Ticket[]
+
+  @@unique([eventId, name])
 }

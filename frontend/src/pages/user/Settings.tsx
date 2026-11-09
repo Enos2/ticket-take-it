@@ -10,6 +10,7 @@ import Alert from "../../components/ui/Alert";
 import Button from "../../components/ui/Button";
 import Card from "../../components/ui/Card";
 import ConfirmDialog from "../../components/ui/ConfirmDialog";
+import NotificationSettings from "../../components/NotificationSettings";
 import { Field, PasswordField } from "../../components/ui/Field";
 import { api, errorMessage } from "../../lib/api";
 import { useAuth } from "../../lib/authStore";
@@ -187,6 +188,8 @@ export default function Settings() {
           </Button>
         </form>
       </Card>
+
+      <NotificationSettings />
 
       <Card className="border-brand/40 p-6">
         <h2 className="text-lg font-bold text-fg">Delete your account</h2>

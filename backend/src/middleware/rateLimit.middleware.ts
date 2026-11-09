@@ -12,6 +12,8 @@ const base = {
 
 // Provider callbacks come from a few IPs and are protected by a secret or signature, so they are never throttled.
 const PROVIDER_CALLBACK = /^\/api\/v1\/payments\/callbacks\//;
+// Door scanners and the live screen would share one venue IP, so they are limited per person instead.
+const DOOR_PATH = /^\/api\/v1\/(checkin|door)(\/|$)/;
 
 // Automated tests send hundreds of requests from one address.
 const isTest = env.NODE_ENV === "test";
@@ -20,7 +22,7 @@ export const generalLimiter = rateLimit({
   ...base,
   windowMs: 15 * 60 * 1000,
   max: 300,
-  skip: (req) => isTest || PROVIDER_CALLBACK.test(req.originalUrl),
+  skip: (req) => isTest || PROVIDER_CALLBACK.test(req.originalUrl) || DOOR_PATH.test(req.originalUrl),
   message: { success: false, message: "Too many requests, slow down." },
 });
 
@@ -40,6 +42,15 @@ export const clientErrorLimiter = rateLimit({
   max: 20,
   skip: () => isTest,
   message: { success: false, message: "Too many reports." },
+});
+// A busy entrance scans about one ticket a second, and the live screen refreshes every 5 seconds.
+export const doorLimiter = rateLimit({
+  ...base,
+  windowMs: 15 * 60 * 1000,
+  max: 1500,
+  keyGenerator: (req) => req.user?.sub ?? "anonymous",
+  skip: () => isTest,
+  message: { success: false, message: "Too many scans, wait a moment." },
 });
 export const paymentLimiter = rateLimit({
   ...base,

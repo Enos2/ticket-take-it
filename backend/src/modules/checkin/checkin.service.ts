@@ -1,18 +1,36 @@
 // ==========================================
 // FILE: backend/src/modules/checkin/checkin.service.ts
-// PURPOSE: Validates a scanned ticket and admits the holder exactly once, inside the event's entry window.
+// PURPOSE: Validates a scanned ticket and admits the holder exactly once, at the right event and gate, inside the entry window.
 // ==========================================
-import { Role } from "@prisma/client";
+import { Role, TicketTier } from "@prisma/client";
 import { prisma } from "../../config/database";
 import { ApiError } from "../../utils/ApiError";
+import { CLOSES_AFTER_MS, OPENS_BEFORE_MS, staffSellerIds } from "../door/door.service";
 
-// Doors can open early, and late arrivals still need to get in. Admins can override both.
-const OPENS_BEFORE_MS = 12 * 60 * 60 * 1000;
-const CLOSES_AFTER_MS = 6 * 60 * 60 * 1000;
+export interface CheckInActor {
+  id: string;
+  email: string;
+  role: Role;
+  emailVerified: boolean;
+}
 
-export async function checkInTicket(userId: string, role: Role, code: string) {
+export interface ScanInput {
+  code: string;
+  eventId?: string; // the event being scanned for. A ticket for any other event is refused.
+  gateId?: string;
+}
+
+const TIER_NAME: Record<TicketTier, string> = {
+  EARLY_BIRD: "Early bird",
+  REGULAR: "Regular",
+  VIP: "VIP",
+  VVIP: "VVIP",
+  GROUP: "Group",
+};
+
+export async function checkInTicket(actor: CheckInActor, input: ScanInput) {
   const ticket = await prisma.ticket.findUnique({
-    where: { code },
+    where: { code: input.code },
     include: {
       event: {
         select: {
@@ -21,22 +39,42 @@ export async function checkInTicket(userId: string, role: Role, code: string) {
           status: true,
           startsAt: true,
           endsAt: true,
+          sellerId: true,
           seller: { select: { userId: true, status: true } },
         },
       },
-      ticketType: { select: { name: true } },
+      ticketType: { select: { name: true, tier: true } },
       user: { select: { fullName: true } },
     },
   });
   if (!ticket) throw ApiError.notFound("Invalid ticket");
 
-  // Admins can scan anything. Sellers only for their own events, and only while approved.
-  if (role !== "ADMIN") {
-    if (ticket.event.seller.userId !== userId) {
-      throw ApiError.forbidden("This ticket is for an event you do not manage");
-    }
-    if (ticket.event.seller.status !== "APPROVED") {
-      throw ApiError.forbidden("Your seller account is not active");
+  // Admins can scan anything. Organisers scan their own events, and door staff scan for the organiser who added them.
+  if (actor.role !== "ADMIN") {
+    const own = ticket.event.seller.userId === actor.id;
+    const staff = !own && (await staffSellerIds(actor.id, actor.email, actor.emailVerified)).includes(ticket.event.sellerId);
+    if (!own && !staff) throw ApiError.forbidden("This ticket is for an event you do not manage");
+    if (ticket.event.seller.status !== "APPROVED") throw ApiError.forbidden("This organizer's account is not active");
+  }
+
+  // The scanner is set to one event. A ticket from another event, even the same organiser's, must not get in here.
+  if (input.eventId && input.eventId !== ticket.event.id) {
+    throw ApiError.conflict(`This ticket is for "${ticket.event.title}", not the event you are scanning for`);
+  }
+
+  let gate: { id: string; name: string; allowedTiers: TicketTier[] } | null = null;
+  if (input.gateId) {
+    gate = await prisma.gate.findFirst({
+      where: { id: input.gateId, eventId: ticket.event.id },
+      select: { id: true, name: true, allowedTiers: true },
+    });
+    if (!gate) throw ApiError.badRequest("That gate does not belong to this event");
+
+    if (gate.allowedTiers.length > 0 && !gate.allowedTiers.includes(ticket.ticketType.tier)) {
+      const allowed = gate.allowedTiers.map((t) => TIER_NAME[t]).join(" and ");
+      throw ApiError.conflict(
+        `${gate.name} admits ${allowed} tickets only. This ticket is ${TIER_NAME[ticket.ticketType.tier]}. Send the person to the right entrance.`
+      );
     }
   }
 
@@ -44,7 +82,7 @@ export async function checkInTicket(userId: string, role: Role, code: string) {
   if (ticket.status === "VOID") throw ApiError.conflict("Ticket is void (refunded or cancelled)");
 
   // Entry window. A forged or leaked code is useless days before the event, or long after it.
-  if (role !== "ADMIN") {
+  if (actor.role !== "ADMIN") {
     const now = Date.now();
     const opensAt = new Date(ticket.event.startsAt.getTime() - OPENS_BEFORE_MS);
     const closedAt = new Date(ticket.event.endsAt.getTime() + CLOSES_AFTER_MS);
@@ -57,7 +95,7 @@ export async function checkInTicket(userId: string, role: Role, code: string) {
   const now = new Date();
   const claimed = await prisma.ticket.updateMany({
     where: { id: ticket.id, status: "VALID" },
-    data: { status: "USED", usedAt: now, checkedInById: userId },
+    data: { status: "USED", usedAt: now, checkedInById: actor.id, gateId: gate ? gate.id : undefined },
   });
 
   if (claimed.count === 0) {
@@ -79,6 +117,7 @@ export async function checkInTicket(userId: string, role: Role, code: string) {
     ticketType: ticket.ticketType.name,
     holder: ticket.user.fullName,
     checkedInAt: now,
+    gate: gate ? gate.name : null,
   };
 }
 // ==========================================

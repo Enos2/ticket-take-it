@@ -29,7 +29,9 @@ export default function AccountLayout() {
         <NavLink to="/account/orders" className={tabClass}>
           My orders
         </NavLink>
-        <NavLink to="/account/settings" className={tabClass}>
+        <NavLink to="/account/saved" className={tabClass}>
+          Saved
+        </NavLink>        <NavLink to="/account/settings" className={tabClass}>
           Settings
         </NavLink>
       </nav>

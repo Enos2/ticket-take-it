@@ -8,6 +8,7 @@ import { prisma } from "../../config/database";
 import { ApiError } from "../../utils/ApiError";
 import { background } from "../../utils/background";
 import { notifyEventCancelled } from "../notifications/notifications.service";
+import { notifyFollowersOfNewEvent } from "../engagement/reminders.service";
 import { releaseStock } from "../orders/orders.service";
 import { getManagedEvent } from "./event.access";
 import { CreateEventInput, UpdateEventInput, ListEventsQuery } from "./events.schema";
@@ -157,6 +158,7 @@ export async function publishEvent(userId: string, role: Role, eventId: string) 
     data: { status: "PUBLISHED", submittedAt: now, reviewedAt: now, reviewedById: userId, reviewNote: null },
   });
   if (flipped.count === 0) throw ApiError.conflict("The event changed while publishing. Please refresh.");
+  background(notifyFollowersOfNewEvent(eventId), "followers: new event emails");
 
   return await prisma.event.findUniqueOrThrow({ where: { id: eventId } });
 }

@@ -12,6 +12,7 @@ import { cleanupExpiredRefreshTokens } from "./modules/auth/auth.service";
 import { reconcilePayments } from "./modules/payments/payments.jobs";
 import { reconcileLedger } from "./modules/finance/ledger.service";
 import { processEmailOutbox } from "./modules/system/outbox.service";
+import { sendEventReminders } from "./modules/engagement/reminders.service";
 import { jobFinished, jobStarted, registerJob } from "./modules/system/jobs";
 
 initMonitoring();
@@ -57,6 +58,7 @@ const timers = [
   startJob("reconcilePayments", 60_000, reconcilePayments),
   startJob("reconcileLedger", 60_000, reconcileLedger),
   startJob("processEmailOutbox", 60_000, processEmailOutbox),
+  startJob("sendEventReminders", 5 * 60_000, sendEventReminders),
   startJob("cleanupExpiredTokens", 60 * 60_000, cleanupExpiredRefreshTokens),
 ];
 
