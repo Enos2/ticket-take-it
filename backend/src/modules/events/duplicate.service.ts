@@ -11,6 +11,7 @@ import { generateSlug } from "./events.service";
 const MAX_SLUG_ATTEMPTS = 3;
 
 // The copy is always a draft. Nothing sold, held or reviewed is copied, so it goes through review like any new event.
+// The capacity and the number of tickets held back for the seller are copied, but none of them are given out yet.
 export async function duplicateEvent(
   userId: string,
   role: Role,
@@ -43,6 +44,7 @@ export async function duplicateEvent(
           country: source.country,
           category: source.category,
           bannerUrl: source.bannerUrl,
+          maxCapacity: source.maxCapacity,
           startsAt,
           endsAt,
           status: "DRAFT",
@@ -54,6 +56,7 @@ export async function duplicateEvent(
               priceCents: t.priceCents,
               currency: t.currency,
               quantity: t.quantity, // sold starts again at 0
+              hostReserved: t.hostReserved, // held back again, none given out yet
               startsAt: shifted(t.startsAt),
               endsAt: shifted(t.endsAt),
               isGroup: t.isGroup,

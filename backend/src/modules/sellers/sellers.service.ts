@@ -7,6 +7,7 @@ import { prisma } from "../../config/database";
 import { ApiError } from "../../utils/ApiError";
 import { skipTake } from "../../utils/pagination";
 import { getManagedEvent } from "../events/event.access";
+import { publicAvailability, reservedRemaining, typeAvailable } from "../events/capacity.service";
 import {
   OnboardSellerInput,
   SellerOrdersQuery,
@@ -110,7 +111,18 @@ export async function getSellerEvents(userId: string, query: SellerEventsQuery) 
       where,
       include: {
         ticketTypes: {
-          select: { id: true, name: true, tier: true, priceCents: true, currency: true, quantity: true, sold: true, isActive: true },
+          select: {
+            id: true,
+            name: true,
+            tier: true,
+            priceCents: true,
+            currency: true,
+            quantity: true,
+            sold: true,
+            hostReserved: true,
+            hostIssued: true,
+            isActive: true,
+          },
           orderBy: { priceCents: "asc" },
         },
       },
@@ -141,7 +153,19 @@ export async function getEventSummary(userId: string, role: Role, eventId: strin
     prisma.ticketType.findMany({
       where: { eventId },
       orderBy: { priceCents: "asc" },
-      select: { id: true, name: true, tier: true, priceCents: true, currency: true, quantity: true, sold: true, isActive: true },
+      select: {
+        id: true,
+        name: true,
+        tier: true,
+        priceCents: true,
+        currency: true,
+        quantity: true,
+        sold: true,
+        hostReserved: true,
+        hostIssued: true,
+        isActive: true,
+        endsAt: true,
+      },
     }),
     prisma.orderItem.groupBy({
       by: ["ticketTypeId"],
@@ -156,10 +180,14 @@ export async function getEventSummary(userId: string, role: Role, eventId: strin
 
   const types = ticketTypes.map((t) => ({
     ...t,
-    available: Math.max(t.quantity - t.sold, 0), // sold includes unpaid holds
+    available: typeAvailable(t), // what the public can still buy. sold includes unpaid holds and given-out tickets
+    heldForGuests: reservedRemaining(t), // held back and not given out yet
+    givenOut: t.hostIssued,
     paidQuantity: paidByType.get(t.id)?.quantity ?? 0,
     revenueCents: paidByType.get(t.id)?.subtotalCents ?? 0,
   }));
+
+  const committed = ticketTypes.reduce((sum, t) => sum + t.sold + reservedRemaining(t), 0);
 
   return {
     event: {
@@ -169,8 +197,15 @@ export async function getEventSummary(userId: string, role: Role, eventId: strin
       status: event.status,
       startsAt: event.startsAt,
       endsAt: event.endsAt,
+      maxCapacity: event.maxCapacity,
     },
     ticketTypes: types,
+    capacity: {
+      maxCapacity: event.maxCapacity,
+      committed, // sold + unpaid holds + held back for guests
+      remainingForSale: publicAvailability(event.maxCapacity, ticketTypes),
+      soldOut: event.status === "SOLD_OUT",
+    },
     totals: {
       ticketsIssued: issued,
       checkedIn,

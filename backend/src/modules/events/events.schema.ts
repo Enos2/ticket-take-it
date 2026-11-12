@@ -16,6 +16,8 @@ export const EVENT_CATEGORIES = [
   "OTHER",
 ] as const;
 
+const MAX_EVENT_CAPACITY = 1_000_000;
+
 const httpsUrl = z
   .string()
   .trim()
@@ -33,8 +35,11 @@ const fields = {
   endsAt: z.string().datetime({ offset: true }),
 };
 
+// The most people the event can hold. When this many tickets are sold, held or reserved, the event is SOLD_OUT.
+const maxCapacity = z.number().int().min(1).max(MAX_EVENT_CAPACITY);
+
 export const createEventSchema = z
-  .object({ ...fields, category: z.enum(EVENT_CATEGORIES).default("OTHER"), bannerUrl: httpsUrl.optional() })
+  .object({ ...fields, category: z.enum(EVENT_CATEGORIES).default("OTHER"), bannerUrl: httpsUrl.optional(), maxCapacity: maxCapacity.optional() })
   .refine((d) => new Date(d.startsAt) > new Date(), {
     message: "startsAt must be in the future",
     path: ["startsAt"],
@@ -44,9 +49,9 @@ export const createEventSchema = z
     path: ["endsAt"],
   });
 
-// Every field optional. bannerUrl: null clears the banner.
+// Every field optional. bannerUrl: null clears the banner. maxCapacity: null removes the capacity limit.
 export const updateEventSchema = z
-  .object({ ...fields, category: z.enum(EVENT_CATEGORIES), bannerUrl: httpsUrl.nullable() })
+  .object({ ...fields, category: z.enum(EVENT_CATEGORIES), bannerUrl: httpsUrl.nullable(), maxCapacity: maxCapacity.nullable() })
   .partial()
   .refine((d) => Object.keys(d).length > 0, { message: "Provide at least one field to update" });
 

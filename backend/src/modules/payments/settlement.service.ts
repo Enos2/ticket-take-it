@@ -11,6 +11,7 @@ import { logger } from "../../utils/logger";
 import { issueTicketsForOrder } from "../orders/fulfillment.service";
 import { notifyOrderPaid } from "../notifications/notifications.service";
 import { postSaleEntries } from "../finance/ledger.service";
+import { capacityRoom, claimStock, lockCapacityEvents, syncSoldOutSafely } from "../events/capacity.service";
 
 export interface WebhookInput {
   reference: string; // order reference
@@ -156,17 +157,28 @@ async function processWebhook(input: WebhookInput): Promise<WebhookResult | "ret
   try {
     await prisma.$transaction(async (tx) => {
       // If the hold was released, the stock may have been resold. Re-claim it atomically.
+      // The same rules as a normal purchase apply: held-back tickets and event capacity are respected.
       if (wasReleased) {
         const sorted = [...order.items].sort((a, b) => (a.ticketTypeId < b.ticketTypeId ? -1 : 1));
+        await lockCapacityEvents(
+          tx,
+          sorted.map((it) => it.ticketTypeId)
+        );
+
         for (const it of sorted) {
-          const ticket = await tx.ticketType.findUnique({ where: { id: it.ticketTypeId } });
+          const ticket = await tx.ticketType.findUnique({
+            where: { id: it.ticketTypeId },
+            include: { event: { select: { maxCapacity: true } } },
+          });
           if (!ticket) throw new StockUnavailableError();
 
-          const claimed = await tx.ticketType.updateMany({
-            where: { id: ticket.id, isActive: true, sold: { lte: ticket.quantity - it.quantity } },
-            data: { sold: { increment: it.quantity } },
-          });
-          if (claimed.count === 0) throw new StockUnavailableError();
+          if (ticket.event.maxCapacity !== null) {
+            const room = await capacityRoom(tx, ticket.eventId, ticket.event.maxCapacity);
+            if (room < it.quantity) throw new StockUnavailableError();
+          }
+
+          const claimed = await claimStock(tx, ticket.id, it.quantity);
+          if (!claimed) throw new StockUnavailableError();
         }
       }
 
@@ -182,6 +194,8 @@ async function processWebhook(input: WebhookInput): Promise<WebhookResult | "ret
       // Same transaction: the order is never PAID without its tickets.
       await issueTicketsForOrder(tx, order.id);
     });
+
+    if (wasReleased) await syncSoldOutSafely(order.items.map((it) => it.ticketTypeId));
 
     background(notifyOrderPaid(order.id), "order confirmation email");
     background(postSaleEntries(order.id), "ledger: sale entries");

@@ -196,6 +196,7 @@ model Event {
   startsAt     DateTime
   endsAt       DateTime
   bannerUrl    String?
+  maxCapacity  Int? // the most people the event can hold. When it is reached the event is SOLD_OUT. Empty means the ticket quantities are the only limit.
   status       EventStatus   @default(DRAFT)
   category     EventCategory @default(OTHER)
   submittedAt  DateTime? // when the seller last sent it for review
@@ -224,7 +225,9 @@ model TicketType {
   priceCents   Int
   currency     String       @default("USD")
   quantity     Int
-  sold         Int          @default(0)
+  sold         Int          @default(0) // unpaid holds, paid tickets and complimentary tickets
+  hostReserved Int          @default(0) // tickets held back from public sale for the seller to give out
+  hostIssued   Int          @default(0) // how many of the held-back tickets were already given out (also counted in sold)
   startsAt     DateTime?
   endsAt       DateTime?
   isGroup      Boolean      @default(false)
@@ -250,6 +253,9 @@ model Order {
   reservationExpiresAt DateTime?
   paidAt               DateTime?
   refundedAt           DateTime?
+  isComp               Boolean     @default(false) // a free ticket given out by the seller, not bought
+  compIssuedById       String? // the user who gave it out
+  compNote             String?
   createdAt            DateTime    @default(now())
   updatedAt            DateTime    @updatedAt
   items                OrderItem[]
@@ -320,9 +326,7 @@ model Payment {
   @@index([orderId])
   @@index([providerRef])
 }
-// ==========================================
-// END OF FILE: backend/prisma/schema.prisma
-// ==========================================
+
 // Every movement of a seller's money. Positive adds to what the seller is owed, negative takes away.
 model LedgerEntry {
   id          String        @id @default(cuid())
@@ -459,3 +463,6 @@ model Gate {
 
   @@unique([eventId, name])
 }
+// ==========================================
+// END OF FILE: backend/prisma/schema.prisma
+// ==========================================

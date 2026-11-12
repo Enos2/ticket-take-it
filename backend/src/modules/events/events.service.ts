@@ -11,6 +11,7 @@ import { notifyEventCancelled } from "../notifications/notifications.service";
 import { notifyFollowersOfNewEvent } from "../engagement/reminders.service";
 import { releaseStock } from "../orders/orders.service";
 import { getManagedEvent } from "./event.access";
+import { committedCapacity, lockEvent, syncSoldOut } from "./capacity.service";
 import { CreateEventInput, UpdateEventInput, ListEventsQuery } from "./events.schema";
 
 // URL-friendly slug with a random suffix to avoid collisions.
@@ -57,6 +58,7 @@ export async function createEvent(userId: string, input: CreateEventInput) {
           startsAt: new Date(input.startsAt),
           endsAt: new Date(input.endsAt),
           bannerUrl: input.bannerUrl,
+          maxCapacity: input.maxCapacity,
           status: "DRAFT", // sellers add tickets, submit for review, and an admin approves
         },
       });
@@ -73,7 +75,7 @@ export async function createEvent(userId: string, input: CreateEventInput) {
 
 export async function getAllEvents({ page, limit }: ListEventsQuery) {
   const where: Prisma.EventWhereInput = {
-    status: "PUBLISHED",
+    status: { in: ["PUBLISHED", "SOLD_OUT"] }, // sold-out events stay visible, marked as sold out
     endsAt: { gte: new Date() }, // hide events that have already ended
   };
 
@@ -93,7 +95,7 @@ export async function getAllEvents({ page, limit }: ListEventsQuery) {
 
 export async function getEventBySlug(slug: string) {
   const event = await prisma.event.findFirst({
-    where: { slug, status: "PUBLISHED" },
+    where: { slug, status: { in: ["PUBLISHED", "SOLD_OUT"] } },
     include: { ticketTypes: activeTickets },
   });
   if (!event) throw ApiError.notFound("Event not found");
@@ -127,18 +129,38 @@ export async function updateEvent(userId: string, role: Role, eventId: string, i
   }
 
   // The slug stays the same so existing links keep working.
-  return await prisma.event.update({
-    where: { id: eventId },
-    data: {
-      title: input.title,
-      description: input.description,
-      venue: input.venue,
-      city: input.city,
-      country: input.country, category: input.category,
-      startsAt: input.startsAt ? startsAt : undefined,
-      endsAt: input.endsAt ? endsAt : undefined,
-      bannerUrl: input.bannerUrl, // null clears it
-    },
+  const data = {
+    title: input.title,
+    description: input.description,
+    venue: input.venue,
+    city: input.city,
+    country: input.country, category: input.category,
+    startsAt: input.startsAt ? startsAt : undefined,
+    endsAt: input.endsAt ? endsAt : undefined,
+    bannerUrl: input.bannerUrl, // null clears it
+    maxCapacity: input.maxCapacity, // null removes the limit
+  };
+
+  if (input.maxCapacity === undefined) {
+    return await prisma.event.update({ where: { id: eventId }, data });
+  }
+
+  // Changing the capacity: lock the event, make sure it still fits what is already taken, then re-check sold out.
+  return await prisma.$transaction(async (tx) => {
+    await lockEvent(tx, eventId);
+
+    if (input.maxCapacity !== null && input.maxCapacity !== undefined) {
+      const committed = await committedCapacity(tx, eventId);
+      if (input.maxCapacity < committed) {
+        throw ApiError.badRequest(
+          `Capacity cannot go below the ${committed} tickets already sold, held for buyers or reserved for guests`
+        );
+      }
+    }
+
+    await tx.event.update({ where: { id: eventId }, data });
+    await syncSoldOut(tx, [eventId]);
+    return await tx.event.findUniqueOrThrow({ where: { id: eventId } });
   });
 }
 
@@ -225,7 +247,8 @@ export async function cancelEvent(userId: string, role: Role, eventId: string) {
   const [updated, paidOrdersToRefund] = await Promise.all([
     prisma.event.findUniqueOrThrow({ where: { id: eventId } }),
     prisma.order.count({
-      where: { status: "PAID", items: { some: { ticketType: { eventId } } } },
+      // Complimentary orders were never paid, so there is nothing to refund.
+      where: { status: "PAID", isComp: false, items: { some: { ticketType: { eventId } } } },
     }),
   ]);
 

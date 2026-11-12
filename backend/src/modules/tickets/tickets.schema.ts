@@ -25,6 +25,9 @@ export const createTicketTypeSchema = z
     currency: z.string().trim().length(3).toUpperCase().default("KES"),
     quantity: z.number().int().positive().max(MAX_QUANTITY),
 
+    // Tickets held back from public sale, for the seller to give out (guests, sponsors, artists...)
+    hostReserved: z.number().int().min(0).max(MAX_QUANTITY).default(0),
+
     // Early Bird window (required when tier is EARLY_BIRD)
     startsAt: z.string().datetime({ offset: true }).optional(),
     endsAt: z.string().datetime({ offset: true }).optional(),
@@ -41,6 +44,14 @@ export const createTicketTypeSchema = z
         code: "custom",
         path: ["priceCents"],
         message: "KES prices must be whole shillings (a multiple of 100 cents)",
+      });
+    }
+
+    if (d.hostReserved > d.quantity) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["hostReserved"],
+        message: "hostReserved cannot exceed the ticket quantity",
       });
     }
 
@@ -110,6 +121,7 @@ export const updateTicketTypeSchema = z
     description: z.string().trim().max(1000).nullable(),
     priceCents: z.number().int().min(0).max(MAX_PRICE_CENTS),
     quantity: z.number().int().positive().max(MAX_QUANTITY),
+    hostReserved: z.number().int().min(0).max(MAX_QUANTITY),
     isActive: z.boolean(),
     startsAt: z.string().datetime({ offset: true }),
     endsAt: z.string().datetime({ offset: true }),

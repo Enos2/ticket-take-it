@@ -2,7 +2,7 @@
 // FILE: backend/src/modules/events/discovery.service.ts
 // PURPOSE: Searching and filtering the public list of events, and finding related, trending and recently viewed ones.
 // ==========================================
-import { Prisma } from "@prisma/client";
+import { EventStatus, Prisma } from "@prisma/client";
 import { prisma } from "../../config/database";
 import { ApiError } from "../../utils/ApiError";
 import { SearchEventsQuery } from "./discovery.schema";
@@ -11,13 +11,16 @@ const NAIROBI_OFFSET = "+03:00"; // Nairobi has no daylight saving
 const DAY_MS = 24 * 60 * 60 * 1000;
 const MAX_SEARCH_WORDS = 5;
 
+// Events people can still see and open. Sold-out events stay visible so buyers know they existed (and can join a waitlist later).
+const VISIBLE: EventStatus[] = ["PUBLISHED", "SOLD_OUT"];
+
 // Only tickets that are on sale, cheapest first.
 const activeTickets = {
   where: { isActive: true },
   orderBy: { priceCents: "asc" },
 } satisfies Prisma.Event$ticketTypesArgs;
 
-const liveNow = () => ({ status: "PUBLISHED" as const, endsAt: { gte: new Date() } });
+const liveNow = () => ({ status: { in: VISIBLE }, endsAt: { gte: new Date() } });
 
 function orderFor(sort: SearchEventsQuery["sort"]): Prisma.EventOrderByWithRelationInput[] {
   switch (sort) {
@@ -123,7 +126,7 @@ export async function getFilterOptions() {
 // One event page. Includes the organiser's name, and nothing private about them.
 export async function getEventDetail(slug: string) {
   const event = await prisma.event.findFirst({
-    where: { slug, status: "PUBLISHED" },
+    where: { slug, status: { in: VISIBLE } },
     include: { ticketTypes: activeTickets, seller: { select: { id: true, businessName: true } } },
   });
   if (!event) throw ApiError.notFound("Event not found");
@@ -133,7 +136,7 @@ export async function getEventDetail(slug: string) {
 // Up to 4 live events like this one: same category, same city, or the same organiser, best matches first.
 export async function similarEvents(slug: string) {
   const base = await prisma.event.findFirst({
-    where: { slug, status: "PUBLISHED" },
+    where: { slug, status: { in: VISIBLE } },
     select: { id: true, category: true, city: true, sellerId: true },
   });
   if (!base) throw ApiError.notFound("Event not found");

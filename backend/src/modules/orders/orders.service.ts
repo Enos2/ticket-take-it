@@ -1,6 +1,6 @@
 // ==========================================
 // FILE: backend/src/modules/orders/orders.service.ts
-// PURPOSE: Core purchase logic. Enforces Early-Bird/Group rules and prevents overselling.
+// PURPOSE: Core purchase logic. Enforces Early-Bird/Group rules, event capacity and held-back tickets, and prevents overselling.
 // ==========================================
 import { randomBytes } from "crypto";
 import { Prisma, Role } from "@prisma/client";
@@ -8,6 +8,14 @@ import { prisma } from "../../config/database";
 import { ApiError } from "../../utils/ApiError";
 import { background } from "../../utils/background";
 import { notifyOrderPaid } from "../notifications/notifications.service";
+import {
+  capacityRoom,
+  claimStock,
+  lockCapacityEvents,
+  reservedRemaining,
+  syncSoldOutForTicketTypes,
+  syncSoldOutSafely,
+} from "../events/capacity.service";
 import { CreateOrderInput } from "./orders.schema";
 import { issueTicketsForOrder } from "./fulfillment.service";
 
@@ -28,6 +36,7 @@ const orderInclude = {
 } satisfies Prisma.OrderInclude;
 
 // Returns stock to inventory. Sorted so concurrent releases can't deadlock.
+// Afterwards a SOLD_OUT event that has stock again goes back on sale.
 export async function releaseStock(
   tx: Prisma.TransactionClient,
   items: { ticketTypeId: string; quantity: number }[]
@@ -39,6 +48,7 @@ export async function releaseStock(
       data: { sold: { decrement: it.quantity } },
     });
   }
+  await syncSoldOutForTicketTypes(tx, sorted.map((it) => it.ticketTypeId));
 }
 
 async function createOrderInternal(userId: string, input: CreateOrderInput) {
@@ -60,6 +70,13 @@ async function createOrderInternal(userId: string, input: CreateOrderInput) {
     const orderItemsData: OrderItemData[] = [];
     const now = new Date();
 
+    // Events with a capacity limit are locked first, in a fixed order,
+    // so two buyers can never both take the last spots of the event.
+    await lockCapacityEvents(
+      tx,
+      items.map((i) => i.ticketTypeId)
+    );
+
     for (const item of items) {
       const ticket = await tx.ticketType.findUnique({
         where: { id: item.ticketTypeId },
@@ -76,8 +93,10 @@ async function createOrderInternal(userId: string, input: CreateOrderInput) {
         throw ApiError.badRequest("All tickets in one order must use the same currency");
       }
 
-      // Event must be on sale and not finished.
-      if (ticket.event.status !== "PUBLISHED" || ticket.event.endsAt < now) {
+      // Event must be on sale and not finished. A SOLD_OUT event is checked against its real stock below,
+      // because its status can lag behind for a moment after tickets are released.
+      const onSale = ticket.event.status === "PUBLISHED" || ticket.event.status === "SOLD_OUT";
+      if (!onSale || ticket.event.endsAt < now) {
         throw ApiError.badRequest(`Tickets for ${ticket.event.title} are no longer on sale`);
       }
 
@@ -111,7 +130,11 @@ async function createOrderInternal(userId: string, input: CreateOrderInput) {
       }
 
       // Friendly pre-check (the atomic update below is what actually protects inventory).
-      const available = ticket.quantity - ticket.sold;
+      // Tickets held back for the seller are not for sale, and the event capacity caps every type together.
+      let available = ticket.quantity - ticket.sold - reservedRemaining(ticket);
+      if (ticket.event.maxCapacity !== null) {
+        available = Math.min(available, await capacityRoom(tx, ticket.eventId, ticket.event.maxCapacity));
+      }
       if (item.quantity > available) {
         throw ApiError.badRequest(
           `Not enough tickets available for ${ticket.name}. Only ${Math.max(available, 0)} left.`
@@ -121,16 +144,8 @@ async function createOrderInternal(userId: string, input: CreateOrderInput) {
       // OVERSELLING PROTECTION: claim the tickets in ONE conditional UPDATE.
       // Postgres re-checks the WHERE clause under the row lock, so if another
       // buyer took the last tickets first, this matches zero rows.
-      const claimed = await tx.ticketType.updateMany({
-        where: {
-          id: ticket.id,
-          isActive: true,
-          sold: { lte: ticket.quantity - item.quantity },
-        },
-        data: { sold: { increment: item.quantity } },
-      });
-
-      if (claimed.count === 0) {
+      const claimed = await claimStock(tx, ticket.id, item.quantity);
+      if (!claimed) {
         throw ApiError.badRequest(`Sorry, ${ticket.name} just sold out or doesn't have enough left.`);
       }
 
@@ -169,6 +184,11 @@ async function createOrderInternal(userId: string, input: CreateOrderInput) {
 
 export async function createOrder(userId: string, input: CreateOrderInput) {
   const order = await createOrderInternal(userId, input);
+
+  // After the purchase is committed, mark the event SOLD_OUT if that was the last stock.
+  // Done here (not inside the transaction) so it also sees purchases that finished at the same moment.
+  await syncSoldOutSafely(order.items.map((i) => i.ticketTypeId));
+
   // Free orders are paid instantly, so their confirmation goes out now. Paid orders email from the payment flow.
   if (order.status === "PAID") background(notifyOrderPaid(order.id), "order confirmation email");
   return order;

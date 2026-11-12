@@ -1,6 +1,6 @@
 // ==========================================
 // FILE: backend/src/modules/events/events.routes.ts
-// PURPOSE: Routes for events: search, discovery, management, duplication and nested ticket routes.
+// PURPOSE: Routes for events: search, discovery, management, duplication, nested ticket routes and given-out tickets.
 // ==========================================
 import { Router, Request, Response, NextFunction } from "express";
 import { z } from "zod";
@@ -13,6 +13,7 @@ import * as controller from "./events.controller";
 import * as discovery from "./discovery.controller";
 import { duplicateEvent } from "./duplicate.service";
 import ticketRoutes from "../tickets/tickets.routes";
+import compsRoutes from "./comps.routes";
 
 const router = Router();
 
@@ -32,6 +33,9 @@ router.get("/lookup", discovery.lookup);
 
 // Nested route: /events/:eventId/tickets
 router.use("/:eventId/tickets", ticketRoutes);
+
+// Nested route: /events/:eventId/comps (seller / admin: give out held-back tickets)
+router.use("/:eventId/comps", compsRoutes);
 
 router.get("/:slug/similar", discovery.similar);
 router.get("/:slug", discovery.detail);

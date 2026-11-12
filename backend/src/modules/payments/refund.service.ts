@@ -91,6 +91,10 @@ export async function refundOrder(adminId: string, orderId: string, reason?: str
       include: { items: true, tickets: { select: { status: true } }, payments: true },
     });
     if (!found) throw ApiError.notFound("Order not found");
+    if (found.isComp) {
+      // Nothing was paid, and the tickets belong back in the seller's held-back pool, not in public sale.
+      throw ApiError.badRequest("Complimentary tickets cannot be refunded. The seller can revoke them from the guest list.");
+    }
     if (found.status !== "PAID") throw ApiError.badRequest("Only paid orders can be refunded");
     if (found.tickets.some((t) => t.status === "USED")) {
       throw ApiError.conflict("Some tickets from this order were already used and cannot be refunded here");
@@ -167,6 +171,7 @@ export async function retryPaymentRefund(adminId: string, paymentId: string) {
 // Refunds every paid order of a CANCELLED event, 25 per call.
 // Call again until `refunded` is 0. `needsReview` counts orders that need a human decision
 // (tickets already scanned, or the order also contains tickets for another event).
+// Complimentary orders are skipped: nothing was paid for them.
 export async function refundEventOrders(adminId: string, eventId: string, reason?: string) {
   const event = await prisma.event.findUnique({ where: { id: eventId }, select: { status: true } });
   if (!event) throw ApiError.notFound("Event not found");
@@ -174,6 +179,7 @@ export async function refundEventOrders(adminId: string, eventId: string, reason
 
   const eligible: Prisma.OrderWhereInput = {
     status: "PAID",
+    isComp: false,
     items: { some: { ticketType: { eventId } }, every: { ticketType: { eventId } } },
     tickets: { none: { status: "USED" } },
   };
@@ -199,7 +205,7 @@ export async function refundEventOrders(adminId: string, eventId: string, reason
 
   const [remaining, allPaid] = await Promise.all([
     prisma.order.count({ where: eligible }),
-    prisma.order.count({ where: { status: "PAID", items: { some: { ticketType: { eventId } } } } }),
+    prisma.order.count({ where: { status: "PAID", isComp: false, items: { some: { ticketType: { eventId } } } } }),
   ]);
 
   return { refunded, failed, remaining, needsReview: allPaid - remaining };
