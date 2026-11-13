@@ -12,6 +12,7 @@ import { issueTicketsForOrder } from "../orders/fulfillment.service";
 import { notifyOrderPaid } from "../notifications/notifications.service";
 import { postSaleEntries } from "../finance/ledger.service";
 import { capacityRoom, claimStock, lockCapacityEvents, syncSoldOutSafely } from "../events/capacity.service";
+import { holdSeats } from "../seating/seatHolds";
 
 export interface WebhookInput {
   reference: string; // order reference
@@ -182,6 +183,19 @@ async function processWebhook(input: WebhookInput): Promise<WebhookResult | "ret
         }
       }
 
+      // Seats: the buyer must still be the one holding them. If the hold ran out and somebody else took a seat,
+      // the buyer paid for something that is gone, so the money is flagged for a refund below.
+      const seatRows = await tx.orderSeat.findMany({ where: { orderId: order.id }, select: { seatId: true } });
+      if (seatRows.length > 0) {
+        const taken = await holdSeats(
+          tx,
+          order.id,
+          seatRows.map((s) => s.seatId),
+          new Date(Date.now() + 5 * 60 * 1000)
+        );
+        if (taken.length > 0) throw new StockUnavailableError();
+      }
+
       // Guarded transition: only succeeds if the status is still what we read.
       const moved = await tx.order.updateMany({
         where: { id: order.id, status: fromStatus },
@@ -191,7 +205,7 @@ async function processWebhook(input: WebhookInput): Promise<WebhookResult | "ret
 
       await settlePayment(tx, order.id, input, "SUCCEEDED");
 
-      // Same transaction: the order is never PAID without its tickets.
+      // Same transaction: the order is never PAID without its tickets (and each ticket without its seat).
       await issueTicketsForOrder(tx, order.id);
     });
 
@@ -207,7 +221,7 @@ async function processWebhook(input: WebhookInput): Promise<WebhookResult | "ret
     if (isUniqueViolation(err)) return "duplicate";
 
     if (err instanceof StockUnavailableError) {
-      // Customer paid but the tickets are gone. Keep the money trail and flag for refund.
+      // Customer paid but the tickets or seats are gone. Keep the money trail and flag for refund.
       const created = await recordPayment(order.id, input, "SUCCEEDED", {
         needsRefund: true,
         reason: "stock_unavailable_after_expiry",

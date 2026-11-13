@@ -59,6 +59,15 @@ export const paymentLimiter = rateLimit({
   skip: () => isTest,
   message: { success: false, message: "Too many payment attempts, please wait a few minutes." },
 });
+// Sending a ticket emails a stranger, so it is limited per person to stop it being used to send spam.
+export const transferLimiter = rateLimit({
+  ...base,
+  windowMs: 60 * 60 * 1000,
+  max: 20,
+  keyGenerator: (req) => req.user?.sub ?? "anonymous",
+  skip: () => isTest,
+  message: { success: false, message: "You are sending tickets too quickly. Please try again later." },
+});
 // ==========================================
 // END OF FILE: backend/src/middleware/rateLimit.middleware.ts
 // ==========================================

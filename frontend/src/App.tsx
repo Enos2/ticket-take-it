@@ -36,6 +36,7 @@ const MyTickets = lazy(() => import("./pages/user/MyTickets"));
 const MyOrders = lazy(() => import("./pages/user/MyOrders"));
 const OrderDetail = lazy(() => import("./pages/user/OrderDetail"));
 const Receipt = lazy(() => import("./pages/user/Receipt"));
+const Transfers = lazy(() => import("./pages/user/Transfers"));
 
 const SellerApply = lazy(() => import("./pages/seller/SellerApply"));
 const SellerDashboard = lazy(() => import("./pages/seller/SellerDashboard"));
@@ -107,6 +108,7 @@ export default function App() {
               <Route index element={<Navigate to="tickets" replace />} />
               <Route path="tickets" element={<MyTickets />} />
               <Route path="orders" element={<MyOrders />} />
+              <Route path="transfers" element={<Transfers />} />
               <Route path="settings" element={<Settings />} />
               <Route path="saved" element={<SavedEvents />} />
               <Route path="orders/:orderId" element={<OrderDetail />} />

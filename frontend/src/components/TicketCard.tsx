@@ -1,7 +1,8 @@
 // ==========================================
 // FILE: frontend/src/components/TicketCard.tsx
-// PURPOSE: One ticket with its QR code, shown to the person who bought it.
+// PURPOSE: One ticket with its QR code, shown to the person who holds it.
 // ==========================================
+import type { ReactNode } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import { CalendarDays, MapPin } from "lucide-react";
 import { cx } from "../lib/cx";
@@ -21,6 +22,7 @@ interface TicketCardProps {
   venue?: string;
   orderReference?: string;
   usedAt?: string | null;
+  footer?: ReactNode; // actions under the ticket, such as Transfer
 }
 
 export default function TicketCard({
@@ -33,6 +35,7 @@ export default function TicketCard({
   venue,
   orderReference,
   usedAt,
+  footer,
 }: TicketCardProps) {
   return (
     <Card className="overflow-hidden">
@@ -82,6 +85,8 @@ export default function TicketCard({
           )}
         </div>
       </div>
+
+      {footer ? <div className="border-t border-line px-5 py-4">{footer}</div> : null}
     </Card>
   );
 }

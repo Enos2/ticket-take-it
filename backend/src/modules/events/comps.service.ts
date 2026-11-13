@@ -33,6 +33,12 @@ export async function issueComps(userId: string, role: Role, eventId: string, in
   const type = await prisma.ticketType.findFirst({ where: { id: input.ticketTypeId, eventId } });
   if (!type) throw ApiError.notFound("Ticket type not found");
 
+  // A ticket without a seat cannot come out of a seated ticket type. Seats are blocked and given from the seat map.
+  const seated = await prisma.seatSection.count({ where: { ticketTypeId: type.id } });
+  if (seated > 0) {
+    throw ApiError.badRequest("This ticket type has assigned seats. Block seats on the seat map, then give them to a guest from there.");
+  }
+
   const quantity = input.quantity;
 
   const order = await prisma.$transaction(async (tx) => {
@@ -137,6 +143,7 @@ export async function listComps(userId: string, role: Role, eventId: string) {
 }
 
 // Takes back an unused complimentary ticket. It goes back into the held-back pool, not into public sale.
+// For a seated ticket the database frees the seat, which stays blocked.
 export async function revokeComp(userId: string, role: Role, eventId: string, ticketId: string) {
   await getManagedEvent(userId, role, eventId);
 

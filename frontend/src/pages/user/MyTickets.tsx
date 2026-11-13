@@ -1,11 +1,12 @@
 // ==========================================
 // FILE: frontend/src/pages/user/MyTickets.tsx
-// PURPOSE: All of a person's tickets with QR codes, upcoming events first.
+// PURPOSE: All of a person's tickets with QR codes, upcoming events first, with a way to send a ticket to someone else.
 // ==========================================
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { Ticket } from "lucide-react";
 import TicketCard from "../../components/TicketCard";
+import TransferControls from "../../components/TransferControls";
 import Alert from "../../components/ui/Alert";
 import Button from "../../components/ui/Button";
 import EmptyState from "../../components/ui/EmptyState";
@@ -14,14 +15,15 @@ import { buttonClasses } from "../../components/ui/styles";
 import { api, errorMessage } from "../../lib/api";
 import { formatDateTime } from "../../lib/format";
 import { useTitle } from "../../lib/useTitle";
-import type { EventBrief, MyTicket } from "../../lib/types";
+import type { TransferView, TransferableTicket, TransfersOverview } from "../../lib/transfers";
+import type { EventBrief } from "../../lib/types";
 
 interface Group {
   event: EventBrief;
-  tickets: MyTicket[];
+  tickets: TransferableTicket[];
 }
 
-function groupByEvent(tickets: MyTicket[]): Group[] {
+function groupByEvent(tickets: TransferableTicket[]): Group[] {
   const groups = new Map<string, Group>();
   for (const ticket of tickets) {
     const existing = groups.get(ticket.event.id);
@@ -31,7 +33,7 @@ function groupByEvent(tickets: MyTicket[]): Group[] {
   return [...groups.values()];
 }
 
-function GroupSection({ group }: { group: Group }) {
+function GroupSection({ group, pendingByTicket }: { group: Group; pendingByTicket: Map<string, TransferView> }) {
   const { event } = group;
   return (
     <section>
@@ -58,6 +60,7 @@ function GroupSection({ group }: { group: Group }) {
             venue={`${event.venue}, ${event.city}`}
             orderReference={ticket.order.reference}
             usedAt={ticket.usedAt}
+            footer={<TransferControls ticket={ticket} pending={pendingByTicket.get(ticket.id)} />}
           />
         ))}
       </div>
@@ -70,7 +73,13 @@ export default function MyTickets() {
 
   const query = useQuery({
     queryKey: ["my-tickets"],
-    queryFn: () => api.get<MyTicket[]>("/orders/my-tickets"),
+    queryFn: () => api.get<TransferableTicket[]>("/orders/my-tickets"),
+  });
+
+  // Tickets I already sent to someone, so each one can show "waiting for an answer".
+  const transfers = useQuery({
+    queryKey: ["transfers"],
+    queryFn: () => api.get<TransfersOverview>("/transfers"),
   });
 
   if (query.isPending) return <PageSpinner />;
@@ -87,24 +96,36 @@ export default function MyTickets() {
   }
 
   const tickets = query.data;
+  const pendingByTicket = new Map<string, TransferView>((transfers.data?.outgoing ?? []).map((t) => [t.ticket.id, t]));
+  const waitingForMe = transfers.data?.incoming.length ?? 0;
 
   if (tickets.length === 0) {
     return (
-      <EmptyState
-        icon={<Ticket className="size-6" aria-hidden="true" />}
-        title="No tickets yet"
-        text="Once you buy tickets, they appear here with a QR code for the entrance."
-        action={
-          <Link to="/events" className={buttonClasses("primary")}>
-            Browse events
-          </Link>
-        }
-      />
+      <div className="space-y-6">
+        {waitingForMe > 0 ? (
+          <Alert variant="info">
+            Someone sent you {waitingForMe === 1 ? "a ticket" : `${waitingForMe} tickets`}.{" "}
+            <Link to="/account/transfers" className="font-semibold underline underline-offset-4">
+              See transfers
+            </Link>
+          </Alert>
+        ) : null}
+        <EmptyState
+          icon={<Ticket className="size-6" aria-hidden="true" />}
+          title="No tickets yet"
+          text="Once you buy tickets, they appear here with a QR code for the entrance."
+          action={
+            <Link to="/events" className={buttonClasses("primary")}>
+              Browse events
+            </Link>
+          }
+        />
+      </div>
     );
   }
 
   const now = Date.now();
-  const isCurrent = (t: MyTicket) =>
+  const isCurrent = (t: TransferableTicket) =>
     t.status !== "VOID" && t.event.status !== "CANCELLED" && new Date(t.event.endsAt).getTime() >= now;
 
   const upcoming = groupByEvent(tickets.filter(isCurrent)).sort(
@@ -116,11 +137,20 @@ export default function MyTickets() {
 
   return (
     <div className="space-y-12">
+      {waitingForMe > 0 ? (
+        <Alert variant="info">
+          Someone sent you {waitingForMe === 1 ? "a ticket" : `${waitingForMe} tickets`}.{" "}
+          <Link to="/account/transfers" className="font-semibold underline underline-offset-4">
+            See transfers
+          </Link>
+        </Alert>
+      ) : null}
+
       {upcoming.length > 0 ? (
         <div className="space-y-10">
           <h2 className="text-sm font-semibold tracking-widest text-gold uppercase">Upcoming</h2>
           {upcoming.map((group) => (
-            <GroupSection key={group.event.id} group={group} />
+            <GroupSection key={group.event.id} group={group} pendingByTicket={pendingByTicket} />
           ))}
         </div>
       ) : null}
@@ -129,7 +159,7 @@ export default function MyTickets() {
         <div className="space-y-10">
           <h2 className="text-sm font-semibold tracking-widest text-muted uppercase">Past and cancelled</h2>
           {past.map((group) => (
-            <GroupSection key={group.event.id} group={group} />
+            <GroupSection key={group.event.id} group={group} pendingByTicket={pendingByTicket} />
           ))}
         </div>
       ) : null}

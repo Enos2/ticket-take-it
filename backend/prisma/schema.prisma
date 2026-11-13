@@ -103,6 +103,14 @@ enum TicketStatus {
   VOID
 }
 
+enum TransferStatus {
+  PENDING
+  ACCEPTED
+  DECLINED
+  CANCELLED
+  EXPIRED
+}
+
 enum EmailTokenType {
   VERIFY_EMAIL
   RESET_PASSWORD
@@ -131,6 +139,8 @@ model User {
   emailTokens   EmailToken[]
   favorites     Favorite[]
   follows       Follow[]
+  transfersSent     TicketTransfer[] @relation("TransfersSent")
+  transfersReceived TicketTransfer[] @relation("TransfersReceived")
 
   @@index([email])
 }
@@ -209,6 +219,7 @@ model Event {
   updatedAt    DateTime      @updatedAt
   ticketTypes  TicketType[]
   tickets      Ticket[]
+  seatSections SeatSection[]
 
   @@index([sellerId])
   @@index([status, startsAt])
@@ -238,6 +249,7 @@ model TicketType {
   updatedAt    DateTime     @updatedAt
   orderItems   OrderItem[]
   tickets      Ticket[]
+  seatSections SeatSection[] // when there are sections, this ticket type is sold by seat
 
   @@index([eventId, tier])
 }
@@ -262,6 +274,7 @@ model Order {
   payments             Payment[]
   ledgerEntries        LedgerEntry[]
   tickets              Ticket[]
+  seats                OrderSeat[] // the seats the buyer picked, kept even after the order is cancelled
 
   @@index([userId])
   @@index([status])
@@ -297,16 +310,87 @@ model Ticket {
   ticketType    TicketType   @relation(fields: [ticketTypeId], references: [id])
   eventId       String
   event         Event        @relation(fields: [eventId], references: [id])
-  userId        String
+  userId        String // the person who holds the ticket now. It changes when a transfer is accepted
   user          User         @relation(fields: [userId], references: [id])
   status        TicketStatus @default(VALID)
   usedAt        DateTime?
   checkedInById String?
+  transferCount Int          @default(0) // how many times the ticket changed hands
+  transfers     TicketTransfer[]
+  seat          Seat? // the assigned seat, if the ticket type is sold by seat. A database trigger frees it when the ticket is voided
   createdAt     DateTime     @default(now())
 
   @@index([orderId])
   @@index([userId])
   @@index([eventId, status])
+}
+
+// A ticket offered to another person. Only one can be PENDING per ticket (enforced by a partial index in the migration).
+model TicketTransfer {
+  id          String         @id @default(cuid())
+  ticketId    String
+  ticket      Ticket         @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  fromUserId  String
+  from        User           @relation("TransfersSent", fields: [fromUserId], references: [id], onDelete: Cascade)
+  toEmail     String // lowercase. Whoever signs in with this verified email can accept
+  toUserId    String? // filled in when it is accepted
+  to          User?          @relation("TransfersReceived", fields: [toUserId], references: [id], onDelete: SetNull)
+  status      TransferStatus @default(PENDING)
+  message     String?
+  expiresAt   DateTime
+  respondedAt DateTime?
+  createdAt   DateTime       @default(now())
+
+  @@index([toEmail, status])
+  @@index([fromUserId, status])
+  @@index([ticketId])
+  @@index([status, expiresAt])
+}
+
+// A named block of seats (for example "Floor" or "Balcony"). Every seat in it is sold at its ticket type's price.
+model SeatSection {
+  id           String     @id @default(cuid())
+  eventId      String
+  event        Event      @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  ticketTypeId String
+  ticketType   TicketType @relation(fields: [ticketTypeId], references: [id])
+  name         String
+  sortOrder    Int        @default(0)
+  seats        Seat[]
+
+  @@unique([eventId, name])
+  @@index([ticketTypeId])
+}
+
+// One seat. It is free when it has no ticket, is not blocked, and has no live hold.
+model Seat {
+  id            String      @id @default(cuid())
+  eventId       String
+  sectionId     String
+  section       SeatSection @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  row           String // A, B, ... Z, AA ...
+  number        Int // 1, 2, 3 ... within the row
+  isBlocked     Boolean     @default(false) // kept off public sale for the seller to give out
+  heldByOrderId String? // the unpaid order holding this seat
+  heldUntil     DateTime? // the hold counts as free after this moment, even if the order was not released yet
+  ticketId      String?     @unique // the ticket that occupies the seat. Cleared by a database trigger when the ticket is voided
+  ticket        Ticket?     @relation(fields: [ticketId], references: [id], onDelete: SetNull)
+  orderSeats    OrderSeat[]
+
+  @@unique([sectionId, row, number])
+  @@index([eventId])
+  @@index([heldByOrderId])
+}
+
+// Which seats an order picked. Kept for good, so a late payment can try to get the same seats again.
+model OrderSeat {
+  orderId String
+  order   Order  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  seatId  String
+  seat    Seat   @relation(fields: [seatId], references: [id], onDelete: Cascade)
+
+  @@id([orderId, seatId])
+  @@index([seatId])
 }
 
 model Payment {

@@ -1,6 +1,6 @@
 // ==========================================
 // FILE: backend/src/modules/orders/orders.service.ts
-// PURPOSE: Core purchase logic. Enforces Early-Bird/Group rules, event capacity and held-back tickets, and prevents overselling.
+// PURPOSE: Core purchase logic. Enforces Early-Bird/Group rules, event capacity, held-back tickets and seat holds, and prevents overselling.
 // ==========================================
 import { randomBytes } from "crypto";
 import { Prisma, Role } from "@prisma/client";
@@ -16,10 +16,11 @@ import {
   syncSoldOutForTicketTypes,
   syncSoldOutSafely,
 } from "../events/capacity.service";
+import { holdSeats, releaseOrderSeats } from "../seating/seatHolds";
 import { CreateOrderInput } from "./orders.schema";
 import { issueTicketsForOrder } from "./fulfillment.service";
 
-// How long an unpaid order holds its tickets before they are released.
+// How long an unpaid order holds its tickets and seats before they are released.
 export const ORDER_HOLD_MINUTES = 15;
 
 interface OrderItemData {
@@ -29,10 +30,13 @@ interface OrderItemData {
   subtotalCents: number;
 }
 
+// The seat a ticket sits in, for the ticket list and the order page.
+const seatSelect = { select: { row: true, number: true, section: { select: { name: true } } } } as const;
+
 // What the API returns for a single order.
 const orderInclude = {
   items: { include: { ticketType: true } },
-  tickets: { select: { id: true, code: true, status: true, ticketTypeId: true } },
+  tickets: { select: { id: true, code: true, status: true, ticketTypeId: true, seat: seatSelect } },
 } satisfies Prisma.OrderInclude;
 
 // Returns stock to inventory. Sorted so concurrent releases can't deadlock.
@@ -52,23 +56,46 @@ export async function releaseStock(
 }
 
 async function createOrderInternal(userId: string, input: CreateOrderInput) {
-  // 1. Merge duplicate lines so the same ticket can't be split to dodge group limits.
-  const merged = new Map<string, number>();
-  for (const { ticketTypeId, quantity } of input.items) {
-    merged.set(ticketTypeId, (merged.get(ticketTypeId) ?? 0) + quantity);
-  }
+  const seatIds = [...new Set(input.seatIds)].sort();
 
-  // 2. Always process tickets in the same order so concurrent orders can't deadlock.
-  const items = [...merged.entries()]
-    .map(([ticketTypeId, quantity]) => ({ ticketTypeId, quantity }))
-    .sort((a, b) => (a.ticketTypeId < b.ticketTypeId ? -1 : 1));
-
-  // If ANY item fails (sold out, wrong date, bad group size), the whole order rolls back.
+  // If ANY item fails (sold out, wrong date, bad group size, a seat just taken), the whole order rolls back.
   return await prisma.$transaction(async (tx) => {
     let totalCents = 0;
     let currency: string | null = null;
     const orderItemsData: OrderItemData[] = [];
     const now = new Date();
+
+    // 1. Merge duplicate lines so the same ticket can't be split to dodge group limits.
+    const merged = new Map<string, number>();
+    for (const { ticketTypeId, quantity } of input.items) {
+      merged.set(ticketTypeId, (merged.get(ticketTypeId) ?? 0) + quantity);
+    }
+
+    // 2. A seated ticket type can only be bought by choosing seats.
+    if (input.items.length > 0) {
+      const seated = await tx.seatSection.findFirst({
+        where: { ticketTypeId: { in: input.items.map((i) => i.ticketTypeId) } },
+        select: { id: true },
+      });
+      if (seated) throw ApiError.badRequest("This ticket has assigned seats. Pick your seats on the seat map.");
+    }
+
+    // 3. Every seat counts as one ticket of its section's ticket type.
+    if (seatIds.length > 0) {
+      const seats = await tx.seat.findMany({
+        where: { id: { in: seatIds } },
+        select: { id: true, section: { select: { ticketTypeId: true } } },
+      });
+      if (seats.length !== seatIds.length) throw ApiError.notFound("One of the seats you picked does not exist");
+      for (const seat of seats) {
+        merged.set(seat.section.ticketTypeId, (merged.get(seat.section.ticketTypeId) ?? 0) + 1);
+      }
+    }
+
+    // 4. Always process tickets in the same order so concurrent orders can't deadlock.
+    const items = [...merged.entries()]
+      .map(([ticketTypeId, quantity]) => ({ ticketTypeId, quantity }))
+      .sort((a, b) => (a.ticketTypeId < b.ticketTypeId ? -1 : 1));
 
     // Events with a capacity limit are locked first, in a fixed order,
     // so two buyers can never both take the last spots of the event.
@@ -176,6 +203,17 @@ async function createOrderInternal(userId: string, input: CreateOrderInput) {
       },
     });
 
+    // Hold the chosen seats. Each seat is claimed in ONE conditional UPDATE, so only one buyer can get it.
+    if (seatIds.length > 0) {
+      await tx.orderSeat.createMany({ data: seatIds.map((seatId) => ({ orderId: order.id, seatId })) });
+
+      const until = order.reservationExpiresAt ?? new Date(now.getTime() + ORDER_HOLD_MINUTES * 60 * 1000);
+      const taken = await holdSeats(tx, order.id, seatIds, until);
+      if (taken.length > 0) {
+        throw ApiError.badRequest("Some of the seats you picked were just taken. Please choose different seats.");
+      }
+    }
+
     if (isFree) await issueTicketsForOrder(tx, order.id);
 
     return await tx.order.findUniqueOrThrow({ where: { id: order.id }, include: orderInclude });
@@ -199,7 +237,8 @@ export async function getUserOrders(userId: string) {
     where: { userId },
     include: {
       items: { include: { ticketType: { include: { event: true } } } },
-      tickets: { select: { id: true, code: true, status: true, ticketTypeId: true } },
+      // Only tickets the person still holds. A ticket they transferred away is not theirs to see.
+      tickets: { where: { userId }, select: { id: true, code: true, status: true, ticketTypeId: true, seat: seatSelect } },
     },
     orderBy: { createdAt: "desc" },
     take: 100,
@@ -211,12 +250,19 @@ export async function getOrderById(userId: string, role: Role, orderId: string) 
     where: { id: orderId },
     include: {
       items: { include: { ticketType: { include: { event: true } } } },
-      tickets: { select: { id: true, code: true, status: true, ticketTypeId: true } },
+      tickets: { select: { id: true, code: true, status: true, ticketTypeId: true, userId: true, seat: seatSelect } },
     },
   });
   // Same error for "missing" and "not yours" so order ids can't be probed.
   if (!order || (order.userId !== userId && role !== "ADMIN")) throw ApiError.notFound("Order not found");
-  return order;
+
+  // The buyer must not see the new code of a ticket they transferred away. Admins see everything.
+  const visible = role === "ADMIN" ? order.tickets : order.tickets.filter((t) => t.userId === userId);
+
+  return {
+    ...order,
+    tickets: visible.map((t) => ({ id: t.id, code: t.code, status: t.status, ticketTypeId: t.ticketTypeId, seat: t.seat })),
+  };
 }
 
 export async function getUserTickets(userId: string) {
@@ -228,6 +274,8 @@ export async function getUserTickets(userId: string) {
       status: true,
       usedAt: true,
       createdAt: true,
+      transferCount: true,
+      seat: seatSelect,
       ticketType: { select: { name: true, tier: true } },
       event: {
         select: { id: true, title: true, slug: true, venue: true, city: true, startsAt: true, endsAt: true, status: true },
@@ -239,7 +287,7 @@ export async function getUserTickets(userId: string) {
   });
 }
 
-// Lets a buyer give up an unpaid order, returning its tickets to stock straight away.
+// Lets a buyer give up an unpaid order, returning its tickets and seats straight away.
 export async function cancelOrder(userId: string, orderId: string) {
   return await prisma.$transaction(async (tx) => {
     const order = await tx.order.findUnique({ where: { id: orderId }, include: { items: true } });
@@ -256,12 +304,13 @@ export async function cancelOrder(userId: string, orderId: string) {
     if (flipped.count === 0) throw ApiError.conflict("The order changed while cancelling. Please refresh.");
 
     await releaseStock(tx, order.items);
+    await releaseOrderSeats(tx, orderId);
 
     return await tx.order.findUniqueOrThrow({ where: { id: orderId }, include: orderInclude });
   });
 }
 
-// Expires unpaid orders past their hold window and returns their tickets to stock.
+// Expires unpaid orders past their hold window and returns their tickets and seats.
 // Called on a timer from server.ts. Returns how many orders were released.
 export async function releaseExpiredOrders(): Promise<number> {
   const now = new Date();
@@ -295,6 +344,7 @@ export async function releaseExpiredOrders(): Promise<number> {
       if (!order) return;
 
       await releaseStock(tx, order.items);
+      await releaseOrderSeats(tx, id);
       released++;
     });
   }
