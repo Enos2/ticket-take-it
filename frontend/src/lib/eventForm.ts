@@ -16,6 +16,7 @@ export interface EventFormValues {
   startsAt: string; // Nairobi time, as a datetime-local value
   endsAt: string;
   bannerUrl: string;
+  maxCapacity: string; // empty means no limit
 }
 
 // What is sent to the API. When editing, only the fields that changed.
@@ -29,6 +30,7 @@ export interface EventPayload {
   startsAt?: string;
   endsAt?: string;
   bannerUrl?: string | null; // null removes the banner
+  maxCapacity?: number | null; // null removes the capacity limit
 }
 
 export const EMPTY_EVENT_VALUES: EventFormValues = {
@@ -41,6 +43,7 @@ export const EMPTY_EVENT_VALUES: EventFormValues = {
   startsAt: "",
   endsAt: "",
   bannerUrl: "",
+  maxCapacity: "",
 };
 
 export function eventToFormValues(event: SellerEvent): EventFormValues {
@@ -54,6 +57,7 @@ export function eventToFormValues(event: SellerEvent): EventFormValues {
     startsAt: isoToNairobiInput(event.startsAt),
     endsAt: isoToNairobiInput(event.endsAt),
     bannerUrl: event.bannerUrl ?? "",
+    maxCapacity: event.maxCapacity === null ? "" : String(event.maxCapacity),
   };
 }
 // ==========================================

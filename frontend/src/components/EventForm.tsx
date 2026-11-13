@@ -16,6 +16,8 @@ type Errors = Partial<Record<keyof EventFormValues, string>>;
 
 const length = (text: string) => text.trim().length;
 
+const MAX_CAPACITY = 1_000_000;
+
 function validate(values: EventFormValues, initial: EventFormValues | null): Errors {
   const errors: Errors = {};
 
@@ -46,6 +48,12 @@ function validate(values: EventFormValues, initial: EventFormValues | null): Err
     }
   }
 
+  // The server also checks that the capacity is not below what is already sold, held or kept for guests.
+  const capacity = values.maxCapacity.trim();
+  if (capacity && (!/^\d+$/.test(capacity) || Number(capacity) < 1 || Number(capacity) > MAX_CAPACITY)) {
+    errors.maxCapacity = "Enter a whole number from 1 to 1,000,000, or leave it empty";
+  }
+
   return errors;
 }
 
@@ -66,6 +74,12 @@ function buildPayload(values: EventFormValues, initial: EventFormValues | null):
     const banner = values.bannerUrl.trim();
     if (banner) payload.bannerUrl = banner;
     else if (initial) payload.bannerUrl = null; // the banner was removed
+  }
+
+  if (changed("maxCapacity")) {
+    const capacity = values.maxCapacity.trim();
+    if (capacity) payload.maxCapacity = Number(capacity);
+    else if (initial) payload.maxCapacity = null; // the limit was removed
   }
 
   return payload;
@@ -155,6 +169,16 @@ export default function EventForm({ initial, submitLabel, busy, error, onSubmit 
           </option>
         ))}
       </SelectField>
+
+      <Field
+        label="Event capacity (optional)"
+        inputMode="numeric"
+        placeholder="500"
+        value={values.maxCapacity}
+        onChange={(e) => set("maxCapacity")(e.target.value)}
+        error={shown("maxCapacity")}
+        hint="The most people the event can hold, across all ticket types. When this many tickets are sold, held or kept for guests, the event shows as sold out. Leave it empty to use only your ticket quantities."
+      />
 
       <Field
         label="Banner image link (optional)"

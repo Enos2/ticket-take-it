@@ -1,6 +1,6 @@
 // ==========================================
 // FILE: frontend/src/pages/seller/EventOverview.tsx
-// PURPOSE: Sales, revenue and door numbers for one event.
+// PURPOSE: Sales, revenue, capacity and door numbers for one event.
 // ==========================================
 import { useQuery } from "@tanstack/react-query";
 import { RefreshCw } from "lucide-react";
@@ -49,18 +49,50 @@ export default function EventOverview() {
     );
   }
 
-  const { totals, ticketTypes } = query.data;
+  const { totals, ticketTypes, capacity } = query.data;
   const currency = totals.currency ?? "KES";
   const checkInPercent = totals.ticketsIssued > 0 ? Math.round((totals.checkedIn / totals.ticketsIssued) * 100) : 0;
+  const capacityPercent =
+    capacity.maxCapacity !== null && capacity.maxCapacity > 0 ? Math.min(100, Math.round((capacity.committed / capacity.maxCapacity) * 100)) : 0;
 
   return (
     <div className="space-y-8">
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Stat label="Revenue" value={formatMoney(totals.revenueCents, currency) === "Free" ? "0" : formatMoney(totals.revenueCents, currency)} hint="From paid orders" />
-        <Stat label="Tickets issued" value={String(totals.ticketsIssued)} hint="Paid and free" />
+        <Stat label="Tickets issued" value={String(totals.ticketsIssued)} hint="Paid, free and given to guests" />
         <Stat label="Checked in" value={String(totals.checkedIn)} />
         <Stat label="Not yet arrived" value={String(totals.notYetArrived)} />
       </div>
+
+      {capacity.maxCapacity !== null ? (
+        <Card className="p-5">
+          <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
+            <h3 className="flex items-center gap-2 font-semibold text-fg">
+              Event capacity
+              {capacity.soldOut ? <Badge tone="gold">Sold out</Badge> : null}
+            </h3>
+            <span className="text-sm text-muted tabular-nums">
+              {capacity.committed} of {capacity.maxCapacity} taken
+            </span>
+          </div>
+          <div
+            className="h-2 overflow-hidden rounded-full bg-ink"
+            role="progressbar"
+            aria-valuenow={capacityPercent}
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-label="Event capacity used"
+          >
+            <div className="h-full rounded-full bg-gold" style={{ width: `${capacityPercent}%` }} />
+          </div>
+          <p className="mt-2 text-xs text-muted">
+            {capacity.soldOut ? "Nobody can buy more tickets right now." : `${capacity.remainingForSale} left for sale.`} Taken counts paid tickets, tickets held
+            for unpaid orders and tickets kept for guests.
+          </p>
+        </Card>
+      ) : capacity.soldOut ? (
+        <Alert variant="info">Every ticket is sold, held or kept for guests, so the event shows as sold out.</Alert>
+      ) : null}
 
       <Card className="p-5">
         <div className="mb-2 flex items-baseline justify-between">
@@ -120,6 +152,11 @@ export default function EventOverview() {
                           <Badge>Off sale</Badge>
                         </span>
                       ) : null}
+                      {t.heldForGuests > 0 || t.givenOut > 0 ? (
+                        <p className="mt-0.5 text-xs text-muted">
+                          {t.heldForGuests} kept for guests · {t.givenOut} given out
+                        </p>
+                      ) : null}
                     </td>
                     <td className="px-5 py-3 text-right tabular-nums text-muted">{formatMoney(t.priceCents, t.currency)}</td>
                     <td className="px-5 py-3 text-right tabular-nums text-fg">{t.paidQuantity}</td>
@@ -137,8 +174,8 @@ export default function EventOverview() {
         )}
 
         <p className="mt-3 text-xs text-muted">
-          "Left" does not count tickets held for unpaid orders, which are released after 15 minutes. This page refreshes by itself
-          every 30 seconds.
+          "Left" is what the public can still buy. It does not count tickets held for unpaid orders, which are released after 15 minutes, or tickets kept for
+          guests. This page refreshes by itself every 30 seconds.
         </p>
       </section>
     </div>

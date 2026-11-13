@@ -52,7 +52,7 @@ export default function EventEdit() {
       <Card className="p-6 sm:p-8">
         {/* The key restarts the form with the saved values after each save. */}
         <EventForm
-          key={`${event.id}-${event.title}-${event.startsAt}-${event.endsAt}-${event.description.length}-${event.venue}-${event.city}-${event.country}-${event.bannerUrl ?? ""}`}
+          key={`${event.id}-${event.title}-${event.startsAt}-${event.endsAt}-${event.description.length}-${event.venue}-${event.city}-${event.country}-${event.bannerUrl ?? ""}-${event.maxCapacity ?? "none"}`}
           initial={eventToFormValues(event)}
           submitLabel="Save changes"
           busy={save.isPending}

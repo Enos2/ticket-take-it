@@ -52,7 +52,9 @@ export interface TicketType {
   priceCents: number; // amounts are always in cents
   currency: string;
   quantity: number;
-  sold: number; // includes tickets held by unpaid orders
+  sold: number; // includes tickets held by unpaid orders and tickets given to guests
+  hostReserved: number; // kept off public sale for the seller to give out
+  hostIssued: number; // how many of those were already given out
   startsAt: string | null; // early bird window
   endsAt: string | null;
   isGroup: boolean;
@@ -78,6 +80,7 @@ export interface EventSummary extends EventBrief {
   country: string;
   category: EventCategory;
   bannerUrl: string | null;
+  maxCapacity: number | null; // the most people the event holds. null means no limit
   ticketTypes: TicketType[];
   seller?: { id: string; businessName: string };
   // Only sellers and admins receive these.
@@ -190,7 +193,7 @@ export interface SellerProfile {
 
 export type SellerTicketBrief = Pick<
   TicketType,
-  "id" | "name" | "tier" | "priceCents" | "currency" | "quantity" | "sold" | "isActive"
+  "id" | "name" | "tier" | "priceCents" | "currency" | "quantity" | "sold" | "hostReserved" | "hostIssued" | "isActive"
 >;
 
 // One row of the seller's events list.
@@ -199,6 +202,7 @@ export interface SellerEventListItem extends EventBrief {
   country: string;
   category: EventCategory;
   bannerUrl: string | null;
+  maxCapacity: number | null;
   ticketTypes: SellerTicketBrief[];
 }
 
@@ -206,14 +210,30 @@ export interface SellerEventListItem extends EventBrief {
 export type SellerEvent = EventSummary;
 
 export interface SalesTicketRow extends SellerTicketBrief {
-  available: number; // excludes tickets held by unpaid orders
+  available: number; // what the public can still buy. Excludes unpaid holds and tickets kept for guests
+  heldForGuests: number; // kept for guests and not given out yet
+  givenOut: number;
   paidQuantity: number;
   revenueCents: number;
 }
 
 export interface EventSalesSummary {
-  event: { id: string; title: string; slug: string; status: EventStatus; startsAt: string; endsAt: string };
+  event: {
+    id: string;
+    title: string;
+    slug: string;
+    status: EventStatus;
+    startsAt: string;
+    endsAt: string;
+    maxCapacity: number | null;
+  };
   ticketTypes: SalesTicketRow[];
+  capacity: {
+    maxCapacity: number | null;
+    committed: number; // sold + unpaid holds + kept for guests
+    remainingForSale: number;
+    soldOut: boolean;
+  };
   totals: {
     ticketsIssued: number;
     checkedIn: number;

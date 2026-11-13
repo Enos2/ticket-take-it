@@ -3,8 +3,9 @@
 // PURPOSE: Add, edit, switch off and delete an event's ticket types.
 // ==========================================
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import { useMutation } from "@tanstack/react-query";
-import { Pencil, Plus, Ticket, Trash2 } from "lucide-react";
+import { Pencil, Plus, Ticket, Trash2, Users } from "lucide-react";
 import TicketTypeForm from "../../components/seller/TicketTypeForm";
 import Alert from "../../components/ui/Alert";
 import Badge from "../../components/ui/Badge";
@@ -13,7 +14,7 @@ import Card from "../../components/ui/Card";
 import ConfirmDialog from "../../components/ui/ConfirmDialog";
 import EmptyState from "../../components/ui/EmptyState";
 import { api, errorMessage } from "../../lib/api";
-import { TIER_LABEL, saleState } from "../../lib/events";
+import { TIER_LABEL, heldForGuests, saleState } from "../../lib/events";
 import { formatDateTime, formatMoney } from "../../lib/format";
 import { canEditEvent } from "../../lib/seller";
 import type { TicketPayload } from "../../lib/seller";
@@ -76,7 +77,10 @@ export default function EventTickets() {
       <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
         <div>
           <h3 className="text-lg font-bold text-fg">Ticket types</h3>
-          <p className="text-sm text-muted">What people can buy, and how many of each.</p>
+          <p className="text-sm text-muted">
+            What people can buy, and how many of each.
+            {event.maxCapacity !== null ? ` The whole event holds at most ${event.maxCapacity} people.` : ""}
+          </p>
         </div>
         {editable && editing === null ? (
           <Button
@@ -146,6 +150,7 @@ export default function EventTickets() {
         <ul className="space-y-3">
           {event.ticketTypes.map((ticket) => {
             const state = saleState(ticket);
+            const kept = heldForGuests(ticket);
             return (
               <li key={ticket.id}>
                 <Card className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between">
@@ -154,10 +159,12 @@ export default function EventTickets() {
                       <h4 className="font-semibold text-fg">{ticket.name}</h4>
                       <Badge tone={ticket.tier === "VIP" ? "gold" : "neutral"}>{TIER_LABEL[ticket.tier]}</Badge>
                       {!ticket.isActive ? <Badge tone="brand">Off sale</Badge> : null}
+                      {ticket.hostReserved > 0 ? <Badge tone="gold">{ticket.hostReserved} for guests</Badge> : null}
                     </div>
 
                     <p className="mt-1 text-sm text-muted tabular-nums">
-                      {formatMoney(ticket.priceCents, ticket.currency)} · {ticket.sold} of {ticket.quantity} sold or held
+                      {formatMoney(ticket.priceCents, ticket.currency)} · {ticket.sold} of {ticket.quantity} sold, held or given out
+                      {kept > 0 ? ` · ${kept} still kept for guests` : ""}
                     </p>
 
                     <div className="mt-1 space-y-0.5 text-xs text-muted">
@@ -212,6 +219,19 @@ export default function EventTickets() {
           })}
         </ul>
       )}
+
+      {event.ticketTypes.length > 0 ? (
+        <p className="mt-5 flex items-center gap-2 text-sm text-muted">
+          <Users className="size-4 text-gold" aria-hidden="true" />
+          <span>
+            Want to give tickets to guests or sponsors? Keep some off public sale here, then hand them out on the{" "}
+            <Link to={`/seller/events/${event.id}/guests`} className="font-semibold text-gold underline-offset-4 hover:underline">
+              Guests tab
+            </Link>
+            .
+          </span>
+        </p>
+      ) : null}
 
       <ConfirmDialog
         open={deleting !== null}

@@ -32,6 +32,10 @@ export function displayStatus(event: { status: EventStatus; endsAt: string }): {
 export const canEditEvent = (event: { status: EventStatus; endsAt: string }): boolean =>
   event.status !== "CANCELLED" && event.status !== "COMPLETED" && !isEventOver(event);
 
+// Tickets kept for guests can only be given out while the event is on sale (or sold out to the public).
+export const canGiveOutTickets = (event: { status: EventStatus; endsAt: string }): boolean =>
+  (event.status === "PUBLISHED" || event.status === "SOLD_OUT") && !isEventOver(event);
+
 export const SELLER_STATUS_LABEL: Record<SellerStatus, string> = {
   PENDING: "Under review",
   APPROVED: "Approved",
@@ -74,6 +78,7 @@ export interface TicketPayload {
   priceCents?: number;
   currency?: string;
   quantity?: number;
+  hostReserved?: number; // tickets kept off public sale for guests
   startsAt?: string;
   endsAt?: string;
   minGroupSize?: number;

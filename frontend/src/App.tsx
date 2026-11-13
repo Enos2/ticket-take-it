@@ -43,6 +43,7 @@ const CreateEvent = lazy(() => import("./pages/seller/CreateEvent"));
 const EventManage = lazy(() => import("./pages/seller/EventManage"));
 const EventOverview = lazy(() => import("./pages/seller/EventOverview"));
 const EventTickets = lazy(() => import("./pages/seller/EventTickets"));
+const EventGuests = lazy(() => import("./pages/seller/EventGuests"));
 const EventEdit = lazy(() => import("./pages/seller/EventEdit"));
 const EventAttendees = lazy(() => import("./pages/seller/EventAttendees"));
 const Scan = lazy(() => import("./pages/user/Scan"));
@@ -124,6 +125,7 @@ export default function App() {
               <Route path="events/:eventId" element={<EventManage />}>
                 <Route index element={<EventOverview />} />
                 <Route path="tickets" element={<EventTickets />} />
+                <Route path="guests" element={<EventGuests />} />
                 <Route path="details" element={<EventEdit />} />
                 <Route path="attendees" element={<EventAttendees />} />
                 <Route path="door" element={<EventDoor />} />

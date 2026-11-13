@@ -9,7 +9,7 @@ import { Clock, Minus, Plus, Users } from "lucide-react";
 import { api, errorMessage } from "../lib/api";
 import { useAuth } from "../lib/authStore";
 import { cx } from "../lib/cx";
-import { TIER_LABEL, isEventOver, saleState, ticketsLeft } from "../lib/events";
+import { TIER_LABEL, availableNow, isEventOver, saleState } from "../lib/events";
 import { formatDateTime, formatMoney } from "../lib/format";
 import type { EventSummary, Order, TicketType } from "../lib/types";
 import Alert from "./ui/Alert";
@@ -23,17 +23,19 @@ const MAX_PER_TICKET = 20;
 interface Row {
   ticket: TicketType;
   state: "open" | "upcoming" | "ended";
+  left: number; // what can be bought right now: stock, event capacity and sold-out status together
   min: number;
   max: number;
 }
 
-function buildRow(ticket: TicketType): Row {
-  const left = ticketsLeft(ticket);
+function buildRow(event: EventSummary, ticket: TicketType): Row {
+  const left = availableNow(event, ticket);
   const grouped = ticket.isGroup && ticket.minGroupSize && ticket.maxGroupSize;
 
   return {
     ticket,
     state: saleState(ticket),
+    left,
     min: grouped ? (ticket.minGroupSize as number) : 1,
     max: grouped ? Math.min(ticket.maxGroupSize as number, left) : Math.min(left, MAX_PER_TICKET),
   };
@@ -54,8 +56,11 @@ export default function TicketPicker({ event, tickets }: TicketPickerProps) {
   const [error, setError] = useState<string | null>(null);
 
   const over = isEventOver(event);
-  const rows = tickets.map(buildRow);
+  const rows = tickets.map((ticket) => buildRow(event, ticket));
   const qty = (row: Row) => quantities[row.ticket.id] ?? 0;
+
+  // Nothing can be bought of any ticket type: the event (or its capacity) is sold out.
+  const soldOutEvent = event.status === "SOLD_OUT" || rows.every((row) => row.left === 0);
 
   const selected = rows.filter((row) => qty(row) > 0);
   const totalCents = selected.reduce((sum, row) => sum + row.ticket.priceCents * qty(row), 0);
@@ -76,7 +81,11 @@ export default function TicketPicker({ event, tickets }: TicketPickerProps) {
       // Free orders are paid instantly and go straight to the tickets.
       navigate(order.status === "PAID" ? `/account/orders/${order.id}?paid=1` : `/checkout/${order.id}`);
     },
-    onError: (err) => setError(errorMessage(err)),
+    onError: (err) => {
+      setError(errorMessage(err));
+      // Someone else may have taken the last tickets. Show the real numbers.
+      void queryClient.invalidateQueries({ queryKey: ["event", event.slug] });
+    },
   });
 
   function change(row: Row, delta: 1 | -1) {
@@ -110,8 +119,7 @@ export default function TicketPicker({ event, tickets }: TicketPickerProps) {
     <div>
       <ul className="space-y-3">
         {rows.map((row) => {
-          const { ticket } = row;
-          const left = ticketsLeft(ticket);
+          const { ticket, left } = row;
           const q = qty(row);
           const soldOut = left === 0;
           const tooFewForGroup = !soldOut && row.max < row.min;
@@ -197,6 +205,13 @@ export default function TicketPicker({ event, tickets }: TicketPickerProps) {
       {over ? (
         <div className="mt-6">
           <Alert variant="info">This event has ended, so tickets are no longer on sale.</Alert>
+        </div>
+      ) : soldOutEvent ? (
+        <div className="mt-6">
+          <Alert variant="info">
+            <p className="font-semibold">This event is sold out.</p>
+            <p className="mt-1">If someone does not complete their payment, their tickets are released, so check back later.</p>
+          </Alert>
         </div>
       ) : (
         <Card className="mt-6 p-5">

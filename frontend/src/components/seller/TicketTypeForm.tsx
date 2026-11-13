@@ -20,6 +20,7 @@ interface Values {
   tier: TicketTier;
   price: string;
   quantity: string;
+  reserved: string; // tickets kept off public sale for guests
   earlyStart: string;
   earlyEnd: string;
   minGroup: string;
@@ -32,7 +33,7 @@ const TIERS: TicketTier[] = ["REGULAR", "EARLY_BIRD", "VIP", "VVIP", "GROUP"];
 
 function initialValues(ticket: TicketType | null): Values {
   if (!ticket) {
-    return { name: "", description: "", tier: "REGULAR", price: "", quantity: "", earlyStart: "", earlyEnd: "", minGroup: "", maxGroup: "" };
+    return { name: "", description: "", tier: "REGULAR", price: "", quantity: "", reserved: "0", earlyStart: "", earlyEnd: "", minGroup: "", maxGroup: "" };
   }
   return {
     name: ticket.name,
@@ -40,6 +41,7 @@ function initialValues(ticket: TicketType | null): Values {
     tier: ticket.tier,
     price: centsToInput(ticket.priceCents),
     quantity: String(ticket.quantity),
+    reserved: String(ticket.hostReserved),
     earlyStart: ticket.startsAt ? isoToNairobiInput(ticket.startsAt) : "",
     earlyEnd: ticket.endsAt ? isoToNairobiInput(ticket.endsAt) : "",
     minGroup: ticket.minGroupSize ? String(ticket.minGroupSize) : "",
@@ -72,6 +74,7 @@ export default function TicketTypeForm({ ticket, currency, eventEndsAt, busy, er
   const errors: Errors = {};
   const priceCents = parseMoneyToCents(values.price);
   const quantity = /^\d+$/.test(values.quantity) ? Number(values.quantity) : NaN;
+  const reserved = /^\d+$/.test(values.reserved) ? Number(values.reserved) : NaN;
 
   if (values.name.trim().length < 2 || values.name.trim().length > 100) errors.name = "Use 2 to 100 characters";
 
@@ -81,7 +84,14 @@ export default function TicketTypeForm({ ticket, currency, eventEndsAt, busy, er
 
   if (!Number.isInteger(quantity) || quantity < 1) errors.quantity = "Enter how many tickets are available";
   else if (quantity > 100_000) errors.quantity = "The most is 100,000";
-  else if (ticket && quantity < ticket.sold) errors.quantity = `At least ${ticket.sold}, because that many are sold or held`;
+  else if (ticket && quantity < ticket.sold) errors.quantity = `At least ${ticket.sold}, because that many are sold, held or given out`;
+  else if (ticket && Number.isInteger(reserved) && reserved >= ticket.hostIssued && quantity < ticket.sold + (reserved - ticket.hostIssued)) {
+    errors.quantity = `At least ${ticket.sold + (reserved - ticket.hostIssued)}, counting sold tickets and the ones kept for guests`;
+  }
+
+  if (!Number.isInteger(reserved)) errors.reserved = "Enter 0 or more";
+  else if (Number.isInteger(quantity) && reserved > quantity) errors.reserved = "Not more than the total tickets";
+  else if (ticket && reserved < ticket.hostIssued) errors.reserved = `At least ${ticket.hostIssued}, because that many were already given out`;
 
   if (showEarly) {
     if (!values.earlyStart) errors.earlyStart = "Choose when this price starts";
@@ -107,6 +117,7 @@ export default function TicketTypeForm({ ticket, currency, eventEndsAt, busy, er
     payload.priceCents = priceCents ?? 0;
     payload.currency = currency;
     payload.quantity = quantity;
+    if (Number.isInteger(reserved) && reserved > 0) payload.hostReserved = reserved;
     if (values.description.trim()) payload.description = values.description.trim();
     if (showEarly && values.earlyStart && values.earlyEnd) {
       payload.startsAt = nairobiInputToIso(values.earlyStart);
@@ -121,6 +132,7 @@ export default function TicketTypeForm({ ticket, currency, eventEndsAt, busy, er
     if (values.description.trim() !== initial.description.trim()) payload.description = values.description.trim() || null;
     if (priceCents !== null && values.price !== initial.price) payload.priceCents = priceCents;
     if (Number.isInteger(quantity) && values.quantity !== initial.quantity) payload.quantity = quantity;
+    if (Number.isInteger(reserved) && values.reserved !== initial.reserved) payload.hostReserved = reserved;
     if (showEarly && values.earlyStart !== initial.earlyStart && values.earlyStart) payload.startsAt = nairobiInputToIso(values.earlyStart);
     if (showEarly && values.earlyEnd !== initial.earlyEnd && values.earlyEnd) payload.endsAt = nairobiInputToIso(values.earlyEnd);
     if (showGroup && values.minGroup !== initial.minGroup) payload.minGroupSize = Number(values.minGroup);
@@ -192,9 +204,19 @@ export default function TicketTypeForm({ ticket, currency, eventEndsAt, busy, er
             value={values.quantity}
             onChange={(e) => set("quantity")(e.target.value)}
             error={shown("quantity")}
-            hint={ticket && ticket.sold > 0 ? `${ticket.sold} are already sold or held.` : undefined}
+            hint={ticket && ticket.sold > 0 ? `${ticket.sold} are already sold, held or given out.` : undefined}
           />
         </div>
+
+        <Field
+          label="Kept for guests (optional)"
+          inputMode="numeric"
+          placeholder="0"
+          value={values.reserved}
+          onChange={(e) => set("reserved")(e.target.value)}
+          error={shown("reserved")}
+          hint="Tickets taken off public sale so you can give them to guests, sponsors or artists. They are part of the number above and count towards the event capacity."
+        />
 
         {showEarly ? (
           <div className="grid gap-5 sm:grid-cols-2">
