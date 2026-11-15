@@ -26,7 +26,7 @@ interface Envelope<T> {
 }
 
 interface RequestOptions {
-  method?: "GET" | "POST" | "PATCH" | "DELETE";
+  method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
   body?: unknown;
   auth?: boolean; // default true. Login, register and similar calls pass false.
   signal?: AbortSignal;
@@ -106,7 +106,8 @@ export function refreshSession(): Promise<string | null> {
 
 const NETWORK_MESSAGE = "Can't reach the server. Check your connection and try again.";
 
-async function request<T>(path: string, options: RequestOptions = {}): Promise<Envelope<T>> {
+// Sends the request, and when the access token has expired gets a new one and tries once more.
+async function fetchWithRefresh(path: string, options: RequestOptions): Promise<Response> {
   const useAuth = options.auth !== false;
 
   let res: Response;
@@ -130,6 +131,12 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<E
     }
   }
 
+  return res;
+}
+
+async function request<T>(path: string, options: RequestOptions = {}): Promise<Envelope<T>> {
+  const res = await fetchWithRefresh(path, options);
+
   const body = await readBody<T>(res);
   if (!res.ok) {
     throw new ApiRequestError(res.status, body.message || `Something went wrong (${res.status}). Please try again.`);
@@ -146,6 +153,10 @@ export const api = {
     return (await request<T>(path, { ...options, method: "POST", body })).data as T;
   },
 
+  async put<T>(path: string, body?: unknown, options?: Omit<RequestOptions, "method" | "body">): Promise<T> {
+    return (await request<T>(path, { ...options, method: "PUT", body })).data as T;
+  },
+
   async patch<T>(path: string, body?: unknown, options?: Omit<RequestOptions, "method" | "body">): Promise<T> {
     return (await request<T>(path, { ...options, method: "PATCH", body })).data as T;
   },
@@ -158,6 +169,17 @@ export const api = {
   async list<T>(path: string, options?: Omit<RequestOptions, "method" | "body">): Promise<Page<T>> {
     const res = await request<T[]>(path, { ...options, method: "GET" });
     return { items: res.data ?? [], meta: res.meta ?? { total: 0, page: 1, limit: 0 } };
+  },
+
+  // For files such as PDF tickets. They need the sign-in token, so a plain link would not work.
+  async blob(path: string, options?: Omit<RequestOptions, "method" | "body">): Promise<Blob> {
+    const res = await fetchWithRefresh(path, { ...options, method: "GET" });
+
+    if (!res.ok) {
+      const body = await readBody<unknown>(res);
+      throw new ApiRequestError(res.status, body.message || `Something went wrong (${res.status}). Please try again.`);
+    }
+    return await res.blob();
   },
 };
 

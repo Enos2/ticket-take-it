@@ -1,6 +1,6 @@
 // ==========================================
 // FILE: frontend/src/components/TicketCard.tsx
-// PURPOSE: One ticket with its QR code, shown to the person who holds it.
+// PURPOSE: One ticket with its QR code, seat and PDF download, shown to the person who holds it.
 // ==========================================
 import type { ReactNode } from "react";
 import { QRCodeSVG } from "qrcode.react";
@@ -9,6 +9,7 @@ import { cx } from "../lib/cx";
 import { formatDateTime } from "../lib/format";
 import { TICKET_STATUS_LABEL } from "../lib/orders";
 import type { TicketStatus } from "../lib/types";
+import DownloadTicketButton from "./DownloadTicketButton";
 import Badge from "./ui/Badge";
 import Card from "./ui/Card";
 
@@ -89,6 +90,9 @@ export default function TicketCard({
                   ? `Used${usedAt ? ` on ${formatDateTime(usedAt)}` : ""}`
                   : "Show this code at the entrance. It works once."}
               </p>
+              {status === "VALID" ? (
+                <DownloadTicketButton path={`/tickets/${ticketId}/pdf`} fileName={`ticket-${ticketId.slice(-6).toUpperCase()}.pdf`} label="Download PDF" />
+              ) : null}
             </>
           )}
         </div>

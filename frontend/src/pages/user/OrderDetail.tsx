@@ -1,10 +1,11 @@
 // ==========================================
 // FILE: frontend/src/pages/user/OrderDetail.tsx
-// PURPOSE: One order: what was bought, its status and, once paid, the tickets with QR codes and seats.
+// PURPOSE: One order: what was bought, its status and, once paid, the tickets with QR codes, seats and PDF downloads.
 // ==========================================
 import { useQuery } from "@tanstack/react-query";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { ArrowLeft, Receipt } from "lucide-react";
+import DownloadTicketButton from "../../components/DownloadTicketButton";
 import OrderStatusBadge from "../../components/OrderStatusBadge";
 import TicketCard from "../../components/TicketCard";
 import Alert from "../../components/ui/Alert";
@@ -59,6 +60,7 @@ export default function OrderDetail() {
 
   // The server also sends the seat of each ticket (empty for general admission).
   const tickets = order.tickets as SeatedOrderTicket[];
+  const validCount = tickets.filter((t) => t.status === "VALID").length;
 
   return (
     <div>
@@ -132,7 +134,17 @@ export default function OrderDetail() {
 
       {showTickets && tickets.length > 0 ? (
         <section className="mt-10">
-          <h3 className="mb-4 text-sm font-semibold tracking-widest text-gold uppercase">Your tickets</h3>
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+            <h3 className="text-sm font-semibold tracking-widest text-gold uppercase">Your tickets</h3>
+            {validCount > 1 ? (
+              <DownloadTicketButton
+                path={`/tickets/order/${order.id}/pdf`}
+                fileName={`tickets-${order.reference}.pdf`}
+                label={`Download all ${validCount} (PDF)`}
+                variant="secondary"
+              />
+            ) : null}
+          </div>
           <div className="space-y-4">
             {tickets.map((ticket) => {
               const item = itemByType.get(ticket.ticketTypeId);
