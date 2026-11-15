@@ -2,13 +2,14 @@
 // FILE: frontend/src/lib/transfers.ts
 // PURPOSE: Types and rules for sending tickets to other people.
 // ==========================================
+import type { TicketSeat } from "./seating";
 import type { EventBrief, MyTicket } from "./types";
 
 // Mirrors the server rule. The server always has the final say.
 export const MAX_TRANSFERS_PER_TICKET = 3;
 
-// A ticket as listed in My tickets, with how many times it already changed hands.
-export type TransferableTicket = MyTicket & { transferCount: number };
+// A ticket as listed in My tickets, with how many times it already changed hands and its seat.
+export type TransferableTicket = MyTicket & { transferCount: number; seat: TicketSeat | null };
 
 export interface TransferView {
   id: string;

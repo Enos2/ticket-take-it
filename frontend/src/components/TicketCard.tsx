@@ -4,7 +4,7 @@
 // ==========================================
 import type { ReactNode } from "react";
 import { QRCodeSVG } from "qrcode.react";
-import { CalendarDays, MapPin } from "lucide-react";
+import { CalendarDays, MapPin, Ticket } from "lucide-react";
 import { cx } from "../lib/cx";
 import { formatDateTime } from "../lib/format";
 import { TICKET_STATUS_LABEL } from "../lib/orders";
@@ -20,6 +20,7 @@ interface TicketCardProps {
   eventTitle: string;
   startsAt?: string;
   venue?: string;
+  seat?: string; // for example "Floor · Row A · Seat 3"
   orderReference?: string;
   usedAt?: string | null;
   footer?: ReactNode; // actions under the ticket, such as Transfer
@@ -33,6 +34,7 @@ export default function TicketCard({
   eventTitle,
   startsAt,
   venue,
+  seat,
   orderReference,
   usedAt,
   footer,
@@ -60,6 +62,12 @@ export default function TicketCard({
               <li className="flex items-start gap-2">
                 <MapPin className="mt-0.5 size-4 shrink-0 text-gold" aria-hidden="true" />
                 <span>{venue}</span>
+              </li>
+            ) : null}
+            {seat ? (
+              <li className="flex items-start gap-2">
+                <Ticket className="mt-0.5 size-4 shrink-0 text-gold" aria-hidden="true" />
+                <span className="font-semibold text-fg">{seat}</span>
               </li>
             ) : null}
           </ul>

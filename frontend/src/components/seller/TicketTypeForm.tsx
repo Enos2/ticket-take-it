@@ -53,13 +53,14 @@ interface TicketTypeFormProps {
   ticket: TicketType | null; // null means adding a new one
   currency: string;
   eventEndsAt: string;
+  seated?: boolean; // this ticket type is sold by seat, so its number of tickets comes from the seat layout
   busy: boolean;
   error: string | null;
   onSubmit: (payload: TicketPayload) => void;
   onCancel: () => void;
 }
 
-export default function TicketTypeForm({ ticket, currency, eventEndsAt, busy, error, onSubmit, onCancel }: TicketTypeFormProps) {
+export default function TicketTypeForm({ ticket, currency, eventEndsAt, seated = false, busy, error, onSubmit, onCancel }: TicketTypeFormProps) {
   const initial = initialValues(ticket);
   const [values, setValues] = useState<Values>(initial);
   const [showErrors, setShowErrors] = useState(false);
@@ -82,16 +83,19 @@ export default function TicketTypeForm({ ticket, currency, eventEndsAt, busy, er
   else if (priceCents > 100_000_000) errors.price = "That price is too high";
   else if (currency === "KES" && priceCents % 100 !== 0) errors.price = "Use whole shillings, without cents";
 
-  if (!Number.isInteger(quantity) || quantity < 1) errors.quantity = "Enter how many tickets are available";
-  else if (quantity > 100_000) errors.quantity = "The most is 100,000";
-  else if (ticket && quantity < ticket.sold) errors.quantity = `At least ${ticket.sold}, because that many are sold, held or given out`;
-  else if (ticket && Number.isInteger(reserved) && reserved >= ticket.hostIssued && quantity < ticket.sold + (reserved - ticket.hostIssued)) {
-    errors.quantity = `At least ${ticket.sold + (reserved - ticket.hostIssued)}, counting sold tickets and the ones kept for guests`;
-  }
+  // For a seated ticket type the seats decide both numbers, so they are not checked here.
+  if (!seated) {
+    if (!Number.isInteger(quantity) || quantity < 1) errors.quantity = "Enter how many tickets are available";
+    else if (quantity > 100_000) errors.quantity = "The most is 100,000";
+    else if (ticket && quantity < ticket.sold) errors.quantity = `At least ${ticket.sold}, because that many are sold, held or given out`;
+    else if (ticket && Number.isInteger(reserved) && reserved >= ticket.hostIssued && quantity < ticket.sold + (reserved - ticket.hostIssued)) {
+      errors.quantity = `At least ${ticket.sold + (reserved - ticket.hostIssued)}, counting sold tickets and the ones kept for guests`;
+    }
 
-  if (!Number.isInteger(reserved)) errors.reserved = "Enter 0 or more";
-  else if (Number.isInteger(quantity) && reserved > quantity) errors.reserved = "Not more than the total tickets";
-  else if (ticket && reserved < ticket.hostIssued) errors.reserved = `At least ${ticket.hostIssued}, because that many were already given out`;
+    if (!Number.isInteger(reserved)) errors.reserved = "Enter 0 or more";
+    else if (Number.isInteger(quantity) && reserved > quantity) errors.reserved = "Not more than the total tickets";
+    else if (ticket && reserved < ticket.hostIssued) errors.reserved = `At least ${ticket.hostIssued}, because that many were already given out`;
+  }
 
   if (showEarly) {
     if (!values.earlyStart) errors.earlyStart = "Choose when this price starts";
@@ -131,8 +135,8 @@ export default function TicketTypeForm({ ticket, currency, eventEndsAt, busy, er
     if (values.name.trim() !== initial.name) payload.name = values.name.trim();
     if (values.description.trim() !== initial.description.trim()) payload.description = values.description.trim() || null;
     if (priceCents !== null && values.price !== initial.price) payload.priceCents = priceCents;
-    if (Number.isInteger(quantity) && values.quantity !== initial.quantity) payload.quantity = quantity;
-    if (Number.isInteger(reserved) && values.reserved !== initial.reserved) payload.hostReserved = reserved;
+    if (!seated && Number.isInteger(quantity) && values.quantity !== initial.quantity) payload.quantity = quantity;
+    if (!seated && Number.isInteger(reserved) && values.reserved !== initial.reserved) payload.hostReserved = reserved;
     if (showEarly && values.earlyStart !== initial.earlyStart && values.earlyStart) payload.startsAt = nairobiInputToIso(values.earlyStart);
     if (showEarly && values.earlyEnd !== initial.earlyEnd && values.earlyEnd) payload.endsAt = nairobiInputToIso(values.earlyEnd);
     if (showGroup && values.minGroup !== initial.minGroup) payload.minGroupSize = Number(values.minGroup);
@@ -157,6 +161,10 @@ export default function TicketTypeForm({ ticket, currency, eventEndsAt, busy, er
 
       <form onSubmit={handleSubmit} className="mt-5 space-y-5" noValidate>
         {error ? <Alert>{error}</Alert> : null}
+
+        {seated ? (
+          <Alert variant="info">This ticket type is sold by seat. Its number of tickets, and the seats kept for guests, are set on the Seating tab.</Alert>
+        ) : null}
 
         <Field
           label="Name"
@@ -204,7 +212,14 @@ export default function TicketTypeForm({ ticket, currency, eventEndsAt, busy, er
             value={values.quantity}
             onChange={(e) => set("quantity")(e.target.value)}
             error={shown("quantity")}
-            hint={ticket && ticket.sold > 0 ? `${ticket.sold} are already sold, held or given out.` : undefined}
+            disabled={seated}
+            hint={
+              seated
+                ? "Set by the seats in your layout."
+                : ticket && ticket.sold > 0
+                  ? `${ticket.sold} are already sold, held or given out.`
+                  : undefined
+            }
           />
         </div>
 
@@ -215,7 +230,12 @@ export default function TicketTypeForm({ ticket, currency, eventEndsAt, busy, er
           value={values.reserved}
           onChange={(e) => set("reserved")(e.target.value)}
           error={shown("reserved")}
-          hint="Tickets taken off public sale so you can give them to guests, sponsors or artists. They are part of the number above and count towards the event capacity."
+          disabled={seated}
+          hint={
+            seated
+              ? "For seats, keep them for guests on the seat map."
+              : "Tickets taken off public sale so you can give them to guests, sponsors or artists. They are part of the number above and count towards the event capacity."
+          }
         />
 
         {showEarly ? (

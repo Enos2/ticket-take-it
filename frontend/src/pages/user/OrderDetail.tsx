@@ -1,6 +1,6 @@
 // ==========================================
 // FILE: frontend/src/pages/user/OrderDetail.tsx
-// PURPOSE: One order: what was bought, its status and, once paid, the tickets with QR codes.
+// PURPOSE: One order: what was bought, its status and, once paid, the tickets with QR codes and seats.
 // ==========================================
 import { useQuery } from "@tanstack/react-query";
 import { Link, useParams, useSearchParams } from "react-router-dom";
@@ -15,6 +15,8 @@ import { buttonClasses } from "../../components/ui/styles";
 import { ApiRequestError, api, errorMessage } from "../../lib/api";
 import { formatDateTime, formatMoney } from "../../lib/format";
 import { isUnpaid, orderTitle } from "../../lib/orders";
+import { seatLabel } from "../../lib/seating";
+import type { SeatedOrderTicket } from "../../lib/seating";
 import { useTitle } from "../../lib/useTitle";
 import type { Order } from "../../lib/types";
 
@@ -54,6 +56,9 @@ export default function OrderDetail() {
   // Each ticket belongs to a ticket type, which tells us its name and event.
   const itemByType = new Map(order.items.map((item) => [item.ticketTypeId, item]));
   const showTickets = order.status === "PAID" || order.status === "REFUNDED";
+
+  // The server also sends the seat of each ticket (empty for general admission).
+  const tickets = order.tickets as SeatedOrderTicket[];
 
   return (
     <div>
@@ -125,11 +130,11 @@ export default function OrderDetail() {
         </div>
       ) : null}
 
-      {showTickets && order.tickets.length > 0 ? (
+      {showTickets && tickets.length > 0 ? (
         <section className="mt-10">
           <h3 className="mb-4 text-sm font-semibold tracking-widest text-gold uppercase">Your tickets</h3>
           <div className="space-y-4">
-            {order.tickets.map((ticket) => {
+            {tickets.map((ticket) => {
               const item = itemByType.get(ticket.ticketTypeId);
               const event = item?.ticketType.event;
               return (
@@ -142,6 +147,7 @@ export default function OrderDetail() {
                   eventTitle={event?.title ?? "Event"}
                   startsAt={event?.startsAt}
                   venue={event ? `${event.venue}, ${event.city}` : undefined}
+                  seat={ticket.seat ? seatLabel(ticket.seat) : undefined}
                   orderReference={order.reference}
                 />
               );

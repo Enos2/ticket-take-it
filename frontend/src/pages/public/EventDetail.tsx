@@ -1,6 +1,6 @@
 // ==========================================
 // FILE: frontend/src/pages/public/EventDetail.tsx
-// PURPOSE: One event: details, organiser, save and share, ticket selection and similar events.
+// PURPOSE: One event: details, organiser, save and share, seat map and ticket selection, and similar events.
 // ==========================================
 import { useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -9,6 +9,7 @@ import { ArrowLeft, CalendarDays, CalendarX2, MapPin } from "lucide-react";
 import EventCard from "../../components/EventCard";
 import FollowButton from "../../components/FollowButton";
 import HeartButton from "../../components/HeartButton";
+import SeatPicker from "../../components/SeatPicker";
 import ShareButton from "../../components/ShareButton";
 import TicketPicker from "../../components/TicketPicker";
 import Alert from "../../components/ui/Alert";
@@ -20,6 +21,7 @@ import { ApiRequestError, api, errorMessage } from "../../lib/api";
 import { formatDate, formatTime } from "../../lib/format";
 import { recordView } from "../../lib/recent";
 import { useTitle } from "../../lib/useTitle";
+import type { PublicSeatMap } from "../../lib/seating";
 import type { EventSummary } from "../../lib/types";
 
 export default function EventDetail() {
@@ -39,6 +41,15 @@ export default function EventDetail() {
 
   const event = query.data;
   useTitle(event?.title);
+
+  // The seat map. An event without seating simply has no sections. Refreshed often so held seats show up quickly.
+  const eventId = event?.id;
+  const seatMap = useQuery({
+    queryKey: ["seat-map", eventId],
+    queryFn: () => api.get<PublicSeatMap>(`/events/${eventId}/seating/map`),
+    enabled: Boolean(eventId),
+    refetchInterval: 30_000, // pauses while the tab is in the background
+  });
 
   // Remember it for "Recently viewed" on the home page.
   const viewed = event?.slug;
@@ -72,6 +83,11 @@ export default function EventDetail() {
 
   const tickets = event.ticketTypes.filter((t) => t.isActive);
   const related = similar.data ?? [];
+
+  // Ticket types sold by seat are bought on the seat map. The rest are plain tickets.
+  const sections = seatMap.data?.sections ?? [];
+  const seatedTypeIds = new Set(sections.map((s) => s.ticketType.id));
+  const plainTickets = tickets.filter((t) => !seatedTypeIds.has(t.id));
 
   return (
     <article className="mx-auto max-w-6xl px-4 py-8 sm:px-6 sm:py-12">
@@ -116,8 +132,18 @@ export default function EventDetail() {
           <h2 className="mt-10 mb-4 text-sm font-semibold tracking-widest text-gold uppercase">Tickets</h2>
           {tickets.length === 0 ? (
             <Card className="p-6 text-sm text-muted">Tickets for this event are not on sale yet.</Card>
+          ) : seatMap.isPending ? (
+            <p className="text-sm text-muted">Loading tickets...</p>
           ) : (
-            <TicketPicker event={event} tickets={tickets} />
+            <div className="space-y-10">
+              {seatMap.data && sections.length > 0 ? <SeatPicker event={event} map={seatMap.data} /> : null}
+              {plainTickets.length > 0 ? (
+                <div>
+                  {sections.length > 0 ? <h3 className="mb-3 text-lg font-bold text-fg">General admission</h3> : null}
+                  <TicketPicker event={event} tickets={plainTickets} />
+                </div>
+              ) : null}
+            </div>
           )}
         </div>
 

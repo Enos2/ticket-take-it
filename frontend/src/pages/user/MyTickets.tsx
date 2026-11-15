@@ -1,6 +1,6 @@
 // ==========================================
 // FILE: frontend/src/pages/user/MyTickets.tsx
-// PURPOSE: All of a person's tickets with QR codes, upcoming events first, with a way to send a ticket to someone else.
+// PURPOSE: All of a person's tickets with QR codes and seats, upcoming events first, with a way to send a ticket to someone else.
 // ==========================================
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
@@ -14,6 +14,7 @@ import { PageSpinner } from "../../components/ui/Spinner";
 import { buttonClasses } from "../../components/ui/styles";
 import { api, errorMessage } from "../../lib/api";
 import { formatDateTime } from "../../lib/format";
+import { seatLabel } from "../../lib/seating";
 import { useTitle } from "../../lib/useTitle";
 import type { TransferView, TransferableTicket, TransfersOverview } from "../../lib/transfers";
 import type { EventBrief } from "../../lib/types";
@@ -58,6 +59,7 @@ function GroupSection({ group, pendingByTicket }: { group: Group; pendingByTicke
             eventTitle={event.title}
             startsAt={event.startsAt}
             venue={`${event.venue}, ${event.city}`}
+            seat={ticket.seat ? seatLabel(ticket.seat) : undefined}
             orderReference={ticket.order.reference}
             usedAt={ticket.usedAt}
             footer={<TransferControls ticket={ticket} pending={pendingByTicket.get(ticket.id)} />}
