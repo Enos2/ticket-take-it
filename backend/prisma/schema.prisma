@@ -111,6 +111,19 @@ enum TransferStatus {
   EXPIRED
 }
 
+enum ResaleStatus {
+  ACTIVE
+  RESERVED
+  SOLD
+  CANCELLED
+}
+
+enum ResalePayoutStatus {
+  NONE
+  OWED
+  PAID
+}
+
 enum EmailTokenType {
   VERIFY_EMAIL
   RESET_PASSWORD
@@ -141,6 +154,8 @@ model User {
   follows       Follow[]
   transfersSent     TicketTransfer[] @relation("TransfersSent")
   transfersReceived TicketTransfer[] @relation("TransfersReceived")
+  resaleListings    ResaleListing[]  @relation("ResaleSeller")
+  resalePurchases   ResaleListing[]  @relation("ResaleBuyer")
 
   @@index([email])
 }
@@ -207,6 +222,8 @@ model Event {
   endsAt       DateTime
   bannerUrl    String?
   maxCapacity  Int? // the most people the event can hold. When it is reached the event is SOLD_OUT. Empty means the ticket quantities are the only limit.
+  resaleEnabled    Boolean   @default(false) // the organiser allows buyers to resell their tickets
+  resaleMaxPercent Int       @default(100) // the highest resale price, as a share of what the ticket originally cost
   status       EventStatus   @default(DRAFT)
   category     EventCategory @default(OTHER)
   submittedAt  DateTime? // when the seller last sent it for review
@@ -220,6 +237,7 @@ model Event {
   ticketTypes  TicketType[]
   tickets      Ticket[]
   seatSections SeatSection[]
+  resaleListings ResaleListing[]
 
   @@index([sellerId])
   @@index([status, startsAt])
@@ -268,6 +286,8 @@ model Order {
   isComp               Boolean     @default(false) // a free ticket given out by the seller, not bought
   compIssuedById       String? // the user who gave it out
   compNote             String?
+  isResale             Boolean     @default(false) // the buyer is paying another person for their ticket. It has no order lines
+  resaleListing        ResaleListing?
   createdAt            DateTime    @default(now())
   updatedAt            DateTime    @updatedAt
   items                OrderItem[]
@@ -317,6 +337,7 @@ model Ticket {
   checkedInById String?
   transferCount Int          @default(0) // how many times the ticket changed hands
   transfers     TicketTransfer[]
+  resaleListings ResaleListing[]
   seat          Seat? // the assigned seat, if the ticket type is sold by seat. A database trigger frees it when the ticket is voided
   createdAt     DateTime     @default(now())
 
@@ -345,6 +366,41 @@ model TicketTransfer {
   @@index([fromUserId, status])
   @@index([ticketId])
   @@index([status, expiresAt])
+}
+
+// A ticket its owner offers for sale at a controlled price. Only one can be open (ACTIVE or RESERVED) per ticket.
+model ResaleListing {
+  id              String             @id @default(cuid())
+  ticketId        String
+  ticket          Ticket             @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  eventId         String
+  event           Event              @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  sellerId        String
+  seller          User               @relation("ResaleSeller", fields: [sellerId], references: [id], onDelete: Cascade)
+  priceCents      Int
+  currency        String
+  faceValueCents  Int // what the ticket originally cost. The price cap is a share of this
+  payoutPhone     String // where the seller wants the money (M-Pesa)
+  status          ResaleStatus       @default(ACTIVE)
+  buyerId         String?
+  buyer           User?              @relation("ResaleBuyer", fields: [buyerId], references: [id], onDelete: SetNull)
+  reservedUntil   DateTime? // a buyer holds the listing until this moment. After it, the listing counts as open again
+  orderId         String?            @unique // the order the current buyer is paying
+  order           Order?             @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  soldAt          DateTime?
+  feeCents        Int? // the platform commission, taken from the seller's money
+  netCents        Int? // what the seller receives
+  payoutStatus    ResalePayoutStatus @default(NONE)
+  paidAt          DateTime?
+  paidById        String?
+  payoutReference String?
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+
+  @@index([ticketId, status])
+  @@index([eventId, status])
+  @@index([sellerId, status])
+  @@index([status, payoutStatus])
 }
 
 // A named block of seats (for example "Floor" or "Balcony"). Every seat in it is sold at its ticket type's price.

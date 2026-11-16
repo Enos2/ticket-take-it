@@ -1,6 +1,6 @@
 // ==========================================
 // FILE: backend/src/modules/payments/settlement.service.ts
-// PURPOSE: The single place where a confirmed payment turns an order into PAID with tickets.
+// PURPOSE: The single place where a confirmed payment turns an order into PAID with tickets (or moves a resold ticket to its buyer).
 // ==========================================
 import { Prisma, PaymentProvider, PaymentStatus } from "@prisma/client";
 import { prisma } from "../../config/database";
@@ -13,6 +13,8 @@ import { notifyOrderPaid } from "../notifications/notifications.service";
 import { postSaleEntries } from "../finance/ledger.service";
 import { capacityRoom, claimStock, lockCapacityEvents, syncSoldOutSafely } from "../events/capacity.service";
 import { holdSeats } from "../seating/seatHolds";
+import { completeResale } from "../resale/resale.service";
+import { notifyResaleCompleted } from "../resale/resale.notifications";
 
 export interface WebhookInput {
   reference: string; // order reference
@@ -155,10 +157,14 @@ async function processWebhook(input: WebhookInput): Promise<WebhookResult | "ret
   const fromStatus = order.status; // exact status we read; the transition below is guarded on it
   const wasReleased = fromStatus === "CANCELLED" || fromStatus === "EXPIRED";
 
+  // Set when this payment was for a resold ticket.
+  let resaleListingId: string | null = null;
+
   try {
     await prisma.$transaction(async (tx) => {
       // If the hold was released, the stock may have been resold. Re-claim it atomically.
       // The same rules as a normal purchase apply: held-back tickets and event capacity are respected.
+      // (A resale order has no lines, so this does nothing for it.)
       if (wasReleased) {
         const sorted = [...order.items].sort((a, b) => (a.ticketTypeId < b.ticketTypeId ? -1 : 1));
         await lockCapacityEvents(
@@ -205,14 +211,25 @@ async function processWebhook(input: WebhookInput): Promise<WebhookResult | "ret
 
       await settlePayment(tx, order.id, input, "SUCCEEDED");
 
-      // Same transaction: the order is never PAID without its tickets (and each ticket without its seat).
-      await issueTicketsForOrder(tx, order.id);
+      if (order.isResale) {
+        // A resold ticket: move the existing ticket to the buyer. If it cannot be moved, everything above is
+        // rolled back and the money is flagged for a refund below.
+        resaleListingId = await completeResale(tx, order.id);
+        if (!resaleListingId) throw new StockUnavailableError();
+      } else {
+        // Same transaction: the order is never PAID without its tickets (and each ticket without its seat).
+        await issueTicketsForOrder(tx, order.id);
+      }
     });
 
     if (wasReleased) await syncSoldOutSafely(order.items.map((it) => it.ticketTypeId));
 
-    background(notifyOrderPaid(order.id), "order confirmation email");
-    background(postSaleEntries(order.id), "ledger: sale entries");
+    if (resaleListingId) {
+      background(notifyResaleCompleted(resaleListingId), "resale emails");
+    } else {
+      background(notifyOrderPaid(order.id), "order confirmation email");
+      background(postSaleEntries(order.id), "ledger: sale entries");
+    }
     return "processed";
   } catch (err) {
     if (err instanceof StatusChangedError) return "retry";
@@ -221,7 +238,7 @@ async function processWebhook(input: WebhookInput): Promise<WebhookResult | "ret
     if (isUniqueViolation(err)) return "duplicate";
 
     if (err instanceof StockUnavailableError) {
-      // Customer paid but the tickets or seats are gone. Keep the money trail and flag for refund.
+      // Customer paid but the tickets, seats or resold ticket are gone. Keep the money trail and flag for refund.
       const created = await recordPayment(order.id, input, "SUCCEEDED", {
         needsRefund: true,
         reason: "stock_unavailable_after_expiry",

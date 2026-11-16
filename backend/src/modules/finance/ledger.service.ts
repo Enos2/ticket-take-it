@@ -123,11 +123,12 @@ export async function postRefundEntries(orderId: string): Promise<number> {
 }
 
 // Runs every minute. Posts anything that was missed (a crash, an old order from before the ledger existed).
+// Resale orders are left out: the organiser earns nothing from a resale, so they never get ledger entries.
 export async function reconcileLedger(): Promise<number> {
   let posted = 0;
 
   const unposted = await prisma.order.findMany({
-    where: { status: "PAID", totalCents: { gt: 0 }, ledgerEntries: { none: { type: "SALE" } } },
+    where: { status: "PAID", isResale: false, totalCents: { gt: 0 }, ledgerEntries: { none: { type: "SALE" } } },
     select: { id: true },
     orderBy: { paidAt: "asc" },
     take: 50,
