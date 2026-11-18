@@ -13,7 +13,7 @@ import { PageSpinner } from "../../components/ui/Spinner";
 import { buttonClasses } from "../../components/ui/styles";
 import { api, errorMessage } from "../../lib/api";
 import { formatDateTime, formatMoney } from "../../lib/format";
-import { isUnpaid, orderTitle } from "../../lib/orders";
+import { isResaleOrder, isUnpaid, orderTitle } from "../../lib/orders";
 import { useTitle } from "../../lib/useTitle";
 import type { Order } from "../../lib/types";
 
@@ -59,6 +59,7 @@ export default function MyOrders() {
     <ul className="space-y-3">
       {orders.map((order) => {
         const ticketCount = order.items.reduce((sum, item) => sum + item.quantity, 0);
+        const what = isResaleOrder(order) ? "1 resold ticket" : `${ticketCount} ${ticketCount === 1 ? "ticket" : "tickets"}`;
         return (
           <li key={order.id}>
             <Link
@@ -71,8 +72,7 @@ export default function MyOrders() {
                   <OrderStatusBadge status={order.status} />
                 </div>
                 <p className="mt-1 text-sm text-muted">
-                  {ticketCount} {ticketCount === 1 ? "ticket" : "tickets"} · {formatMoney(order.totalCents, order.currency)} ·{" "}
-                  {formatDateTime(order.createdAt)}
+                  {what} · {formatMoney(order.totalCents, order.currency)} · {formatDateTime(order.createdAt)}
                 </p>
                 <p className="mt-0.5 text-xs text-muted">Order {order.reference}</p>
                 {isUnpaid(order.status) ? <p className="mt-2 text-sm font-semibold text-gold">Complete payment</p> : null}

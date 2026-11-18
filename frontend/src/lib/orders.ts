@@ -37,6 +37,9 @@ export function orderStatusTone(status: OrderStatus): Tone {
 
 export const isUnpaid = (status: OrderStatus) => status === "PENDING" || status === "RESERVED";
 
+// An order with no ticket lines is a resale purchase: the buyer paid another fan for an existing ticket.
+export const isResaleOrder = (order: Order) => order.items.length === 0;
+
 // The distinct events an order covers.
 export function orderEvents(order: Order): EventBrief[] {
   const seen = new Map<string, EventBrief>();
@@ -48,6 +51,7 @@ export function orderEvents(order: Order): EventBrief[] {
 }
 
 export function orderTitle(order: Order): string {
+  if (isResaleOrder(order)) return "Resold ticket";
   const events = orderEvents(order);
   return events.length === 0 ? "Your order" : events.map((e) => e.title).join(", ");
 }

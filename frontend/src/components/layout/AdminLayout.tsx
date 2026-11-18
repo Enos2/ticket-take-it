@@ -7,6 +7,7 @@ import { NavLink, Outlet } from "react-router-dom";
 import { api } from "../../lib/api";
 import { cx } from "../../lib/cx";
 import type { AdminStats } from "../../lib/adminTypes";
+import type { OwedProceeds } from "../../lib/resale";
 
 const tabClass = ({ isActive }: { isActive: boolean }) =>
   cx(
@@ -27,6 +28,13 @@ export default function AdminLayout() {
   const stats = useQuery({
     queryKey: ["admin-stats"],
     queryFn: () => api.get<AdminStats>("/admin/stats"),
+    refetchInterval: 60_000,
+  });
+
+  // How many resale sellers are waiting to be paid.
+  const resaleOwed = useQuery({
+    queryKey: ["admin-resale-owed"],
+    queryFn: () => api.get<OwedProceeds[]>("/resale/admin/owed"),
     refetchInterval: 60_000,
   });
 
@@ -58,6 +66,10 @@ export default function AdminLayout() {
         </NavLink>
         <NavLink to="/admin/payouts" className={tabClass}>
           Payouts
+        </NavLink>
+        <NavLink to="/admin/resale" className={tabClass}>
+          Resale
+          <Count value={resaleOwed.data?.length} />
         </NavLink>
         <NavLink to="/admin/users" className={tabClass}>
           Users

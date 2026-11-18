@@ -37,6 +37,7 @@ const MyOrders = lazy(() => import("./pages/user/MyOrders"));
 const OrderDetail = lazy(() => import("./pages/user/OrderDetail"));
 const Receipt = lazy(() => import("./pages/user/Receipt"));
 const Transfers = lazy(() => import("./pages/user/Transfers"));
+const MyResale = lazy(() => import("./pages/user/MyResale"));
 
 const SellerApply = lazy(() => import("./pages/seller/SellerApply"));
 const SellerDashboard = lazy(() => import("./pages/seller/SellerDashboard"));
@@ -46,6 +47,7 @@ const EventOverview = lazy(() => import("./pages/seller/EventOverview"));
 const EventTickets = lazy(() => import("./pages/seller/EventTickets"));
 const EventSeating = lazy(() => import("./pages/seller/EventSeating"));
 const EventGuests = lazy(() => import("./pages/seller/EventGuests"));
+const EventResale = lazy(() => import("./pages/seller/EventResale"));
 const EventEdit = lazy(() => import("./pages/seller/EventEdit"));
 const EventAttendees = lazy(() => import("./pages/seller/EventAttendees"));
 const Scan = lazy(() => import("./pages/user/Scan"));
@@ -62,6 +64,7 @@ const AdminOrders = lazy(() => import("./pages/admin/AdminOrders"));
 const AdminRefunds = lazy(() => import("./pages/admin/AdminRefunds"));
 const AdminUsers = lazy(() => import("./pages/admin/AdminUsers"));
 const AdminPayouts = lazy(() => import("./pages/admin/AdminPayouts"));
+const AdminResale = lazy(() => import("./pages/admin/AdminResale"));
 const AdminAudit = lazy(() => import("./pages/admin/AdminAudit"));
 const AdminSystem = lazy(() => import("./pages/admin/AdminSystem"));
 
@@ -110,6 +113,7 @@ export default function App() {
               <Route path="tickets" element={<MyTickets />} />
               <Route path="orders" element={<MyOrders />} />
               <Route path="transfers" element={<Transfers />} />
+              <Route path="resale" element={<MyResale />} />
               <Route path="settings" element={<Settings />} />
               <Route path="saved" element={<SavedEvents />} />
               <Route path="orders/:orderId" element={<OrderDetail />} />
@@ -130,6 +134,7 @@ export default function App() {
                 <Route path="tickets" element={<EventTickets />} />
                 <Route path="seating" element={<EventSeating />} />
                 <Route path="guests" element={<EventGuests />} />
+                <Route path="resale" element={<EventResale />} />
                 <Route path="details" element={<EventEdit />} />
                 <Route path="attendees" element={<EventAttendees />} />
                 <Route path="door" element={<EventDoor />} />
@@ -147,6 +152,7 @@ export default function App() {
               <Route path="refunds" element={<AdminRefunds />} />
               <Route path="users" element={<AdminUsers />} />
               <Route path="payouts" element={<AdminPayouts />} />
+              <Route path="resale" element={<AdminResale />} />
               <Route path="audit" element={<AdminAudit />} />
               <Route path="system" element={<AdminSystem />} />
             </Route>

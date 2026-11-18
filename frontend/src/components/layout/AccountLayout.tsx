@@ -1,6 +1,6 @@
 // ==========================================
 // FILE: frontend/src/components/layout/AccountLayout.tsx
-// PURPOSE: Frame for the signed-in area: a heading and tabs for tickets, orders, transfers and settings.
+// PURPOSE: Frame for the signed-in area: a heading and tabs for tickets, orders, transfers, resale and settings.
 // ==========================================
 import { NavLink, Outlet } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
@@ -47,6 +47,9 @@ export default function AccountLayout() {
               {waiting}
             </span>
           ) : null}
+        </NavLink>
+        <NavLink to="/account/resale" className={tabClass}>
+          Resale
         </NavLink>
         <NavLink to="/account/saved" className={tabClass}>
           Saved

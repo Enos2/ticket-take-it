@@ -1,10 +1,11 @@
 // ==========================================
 // FILE: frontend/src/pages/user/MyTickets.tsx
-// PURPOSE: All of a person's tickets with QR codes and seats, upcoming events first, with a way to send a ticket to someone else.
+// PURPOSE: All of a person's tickets with QR codes and seats, upcoming events first, with ways to send a ticket or sell it.
 // ==========================================
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { Ticket } from "lucide-react";
+import ResaleControls from "../../components/ResaleControls";
 import TicketCard from "../../components/TicketCard";
 import TransferControls from "../../components/TransferControls";
 import Alert from "../../components/ui/Alert";
@@ -16,12 +17,20 @@ import { api, errorMessage } from "../../lib/api";
 import { formatDateTime } from "../../lib/format";
 import { seatLabel } from "../../lib/seating";
 import { useTitle } from "../../lib/useTitle";
+import type { MyListing, MyResale, ResaleOption } from "../../lib/resale";
 import type { TransferView, TransferableTicket, TransfersOverview } from "../../lib/transfers";
 import type { EventBrief } from "../../lib/types";
 
 interface Group {
   event: EventBrief;
   tickets: TransferableTicket[];
+}
+
+// What can be done with the tickets, looked up by ticket.
+interface Lookups {
+  pendingTransfer: Map<string, TransferView>;
+  openListing: Map<string, MyListing>;
+  resaleOption: Map<string, ResaleOption>;
 }
 
 function groupByEvent(tickets: TransferableTicket[]): Group[] {
@@ -34,7 +43,7 @@ function groupByEvent(tickets: TransferableTicket[]): Group[] {
   return [...groups.values()];
 }
 
-function GroupSection({ group, pendingByTicket }: { group: Group; pendingByTicket: Map<string, TransferView> }) {
+function GroupSection({ group, lookups }: { group: Group; lookups: Lookups }) {
   const { event } = group;
   return (
     <section>
@@ -49,22 +58,41 @@ function GroupSection({ group, pendingByTicket }: { group: Group; pendingByTicke
         </p>
       </div>
       <div className="space-y-4">
-        {group.tickets.map((ticket) => (
-          <TicketCard
-            key={ticket.id}
-            ticketId={ticket.id}
-            code={ticket.code}
-            status={ticket.status}
-            ticketName={ticket.ticketType.name}
-            eventTitle={event.title}
-            startsAt={event.startsAt}
-            venue={`${event.venue}, ${event.city}`}
-            seat={ticket.seat ? seatLabel(ticket.seat) : undefined}
-            orderReference={ticket.order.reference}
-            usedAt={ticket.usedAt}
-            footer={<TransferControls ticket={ticket} pending={pendingByTicket.get(ticket.id)} />}
-          />
-        ))}
+        {group.tickets.map((ticket) => {
+          const listing = lookups.openListing.get(ticket.id);
+          const option = lookups.resaleOption.get(ticket.id);
+
+          return (
+            <TicketCard
+              key={ticket.id}
+              ticketId={ticket.id}
+              code={ticket.code}
+              status={ticket.status}
+              ticketName={ticket.ticketType.name}
+              eventTitle={event.title}
+              startsAt={event.startsAt}
+              venue={`${event.venue}, ${event.city}`}
+              seat={ticket.seat ? seatLabel(ticket.seat) : undefined}
+              orderReference={ticket.order.reference}
+              usedAt={ticket.usedAt}
+              footer={
+                // A ticket that is for sale cannot also be transferred.
+                listing ? (
+                  <ResaleControls ticketId={ticket.id} listing={listing} option={option} />
+                ) : (
+                  <div className="space-y-4">
+                    <TransferControls ticket={ticket} pending={lookups.pendingTransfer.get(ticket.id)} />
+                    {option ? (
+                      <div className="border-t border-line pt-4">
+                        <ResaleControls ticketId={ticket.id} listing={undefined} option={option} />
+                      </div>
+                    ) : null}
+                  </div>
+                )
+              }
+            />
+          );
+        })}
       </div>
     </section>
   );
@@ -84,6 +112,12 @@ export default function MyTickets() {
     queryFn: () => api.get<TransfersOverview>("/transfers"),
   });
 
+  // Tickets I listed for resale, and the tickets I am allowed to list.
+  const resale = useQuery({
+    queryKey: ["resale-mine"],
+    queryFn: () => api.get<MyResale>("/resale/mine"),
+  });
+
   if (query.isPending) return <PageSpinner />;
 
   if (query.isError) {
@@ -98,7 +132,13 @@ export default function MyTickets() {
   }
 
   const tickets = query.data;
-  const pendingByTicket = new Map<string, TransferView>((transfers.data?.outgoing ?? []).map((t) => [t.ticket.id, t]));
+  const lookups: Lookups = {
+    pendingTransfer: new Map((transfers.data?.outgoing ?? []).map((t) => [t.ticket.id, t])),
+    openListing: new Map(
+      (resale.data?.listings ?? []).filter((l) => l.status === "ACTIVE" || l.status === "RESERVED").map((l) => [l.ticketId, l])
+    ),
+    resaleOption: new Map((resale.data?.options ?? []).map((o) => [o.ticketId, o])),
+  };
   const waitingForMe = transfers.data?.incoming.length ?? 0;
 
   if (tickets.length === 0) {
@@ -152,7 +192,7 @@ export default function MyTickets() {
         <div className="space-y-10">
           <h2 className="text-sm font-semibold tracking-widest text-gold uppercase">Upcoming</h2>
           {upcoming.map((group) => (
-            <GroupSection key={group.event.id} group={group} pendingByTicket={pendingByTicket} />
+            <GroupSection key={group.event.id} group={group} lookups={lookups} />
           ))}
         </div>
       ) : null}
@@ -161,7 +201,7 @@ export default function MyTickets() {
         <div className="space-y-10">
           <h2 className="text-sm font-semibold tracking-widest text-muted uppercase">Past and cancelled</h2>
           {past.map((group) => (
-            <GroupSection key={group.event.id} group={group} pendingByTicket={pendingByTicket} />
+            <GroupSection key={group.event.id} group={group} lookups={lookups} />
           ))}
         </div>
       ) : null}

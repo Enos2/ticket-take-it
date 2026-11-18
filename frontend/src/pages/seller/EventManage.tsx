@@ -258,6 +258,9 @@ export default function EventManage() {
         <NavLink to={`/seller/events/${event.id}/guests`} className={tabClass}>
           Guests
         </NavLink>
+        <NavLink to={`/seller/events/${event.id}/resale`} className={tabClass}>
+          Resale
+        </NavLink>
         <NavLink to={`/seller/events/${event.id}/details`} className={tabClass}>
           Details
         </NavLink>

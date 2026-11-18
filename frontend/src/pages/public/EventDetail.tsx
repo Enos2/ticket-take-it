@@ -1,6 +1,6 @@
 // ==========================================
 // FILE: frontend/src/pages/public/EventDetail.tsx
-// PURPOSE: One event: details, organiser, save and share, seat map and ticket selection, and similar events.
+// PURPOSE: One event: details, organiser, save and share, seat map and ticket selection, resale tickets, and similar events.
 // ==========================================
 import { useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -9,6 +9,7 @@ import { ArrowLeft, CalendarDays, CalendarX2, MapPin } from "lucide-react";
 import EventCard from "../../components/EventCard";
 import FollowButton from "../../components/FollowButton";
 import HeartButton from "../../components/HeartButton";
+import ResaleListings from "../../components/ResaleListings";
 import SeatPicker from "../../components/SeatPicker";
 import ShareButton from "../../components/ShareButton";
 import TicketPicker from "../../components/TicketPicker";
@@ -145,6 +146,9 @@ export default function EventDetail() {
               ) : null}
             </div>
           )}
+
+          {/* tickets other fans are reselling, when the organiser allows it */}
+          <ResaleListings event={event} />
         </div>
 
         {/* details */}

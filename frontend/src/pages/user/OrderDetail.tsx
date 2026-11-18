@@ -15,7 +15,7 @@ import { PageSpinner } from "../../components/ui/Spinner";
 import { buttonClasses } from "../../components/ui/styles";
 import { ApiRequestError, api, errorMessage } from "../../lib/api";
 import { formatDateTime, formatMoney } from "../../lib/format";
-import { isUnpaid, orderTitle } from "../../lib/orders";
+import { isResaleOrder, isUnpaid, orderTitle } from "../../lib/orders";
 import { seatLabel } from "../../lib/seating";
 import type { SeatedOrderTicket } from "../../lib/seating";
 import { useTitle } from "../../lib/useTitle";
@@ -57,6 +57,7 @@ export default function OrderDetail() {
   // Each ticket belongs to a ticket type, which tells us its name and event.
   const itemByType = new Map(order.items.map((item) => [item.ticketTypeId, item]));
   const showTickets = order.status === "PAID" || order.status === "REFUNDED";
+  const resale = isResaleOrder(order);
 
   // The server also sends the seat of each ticket (empty for general admission).
   const tickets = order.tickets as SeatedOrderTicket[];
@@ -89,17 +90,21 @@ export default function OrderDetail() {
       </div>
 
       <Card className="mt-6 p-6">
-        <ul className="space-y-3 border-b border-line pb-5">
-          {order.items.map((item) => (
-            <li key={item.id} className="flex items-start justify-between gap-4 text-sm">
-              <span className="text-muted">
-                <span className="font-semibold text-fg">{item.quantity} ×</span> {item.ticketType.name}
-                {item.ticketType.event ? <span className="block text-xs">{item.ticketType.event.title}</span> : null}
-              </span>
-              <span className="shrink-0 font-medium text-fg">{formatMoney(item.subtotalCents, order.currency)}</span>
-            </li>
-          ))}
-        </ul>
+        {!resale ? (
+          <ul className="space-y-3 border-b border-line pb-5">
+            {order.items.map((item) => (
+              <li key={item.id} className="flex items-start justify-between gap-4 text-sm">
+                <span className="text-muted">
+                  <span className="font-semibold text-fg">{item.quantity} ×</span> {item.ticketType.name}
+                  {item.ticketType.event ? <span className="block text-xs">{item.ticketType.event.title}</span> : null}
+                </span>
+                <span className="shrink-0 font-medium text-fg">{formatMoney(item.subtotalCents, order.currency)}</span>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="border-b border-line pb-5 text-sm text-muted">A ticket bought from another fan on Ticket Take It.</p>
+        )}
         <div className="mt-5 flex items-baseline justify-between">
           <span className="text-sm text-muted">Total</span>
           <span className="text-xl font-extrabold text-fg">{formatMoney(order.totalCents, order.currency)}</span>
@@ -116,6 +121,18 @@ export default function OrderDetail() {
           </Link>
         ) : null}
       </Card>
+
+      {resale && order.status === "PAID" ? (
+        <div className="mt-6">
+          <Alert variant="success">
+            The ticket is yours now, with a new QR code made just for you. Find it, and download it as a PDF, under{" "}
+            <Link to="/account/tickets" className="font-semibold underline underline-offset-4">
+              My tickets
+            </Link>
+            .
+          </Alert>
+        </div>
+      ) : null}
 
       {order.status === "REFUNDED" ? (
         <div className="mt-6">
