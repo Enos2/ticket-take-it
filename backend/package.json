@@ -10,7 +10,10 @@
     "prisma:migrate": "prisma migrate dev",
     "prisma:studio": "prisma studio",
     "seed": "ts-node prisma/seed.ts",
-    "seed:demo": "ts-node --transpile-only prisma/seed-demo.ts"
+    "seed:demo": "ts-node --transpile-only prisma/seed-demo.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@prisma/client": "^5.20.0",
@@ -39,10 +42,13 @@
     "@types/node": "^22.5.0",
     "@types/pdfkit": "^0.17.7",
     "@types/qrcode": "^1.5.6",
+    "@types/supertest": "^7.2.1",
     "prisma": "^5.20.0",
+    "supertest": "^7.3.2",
     "ts-node": "^10.9.2",
     "tsx": "^4.23.15",
-    "typescript": "^5.5.4"
+    "typescript": "^5.5.4",
+    "vitest": "^5.1.1"
   },
   "allowScripts": {
     "@prisma/client@5.22.0": true,

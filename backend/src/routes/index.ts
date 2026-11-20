@@ -16,6 +16,7 @@ import resaleRoutes from "../modules/resale/resale.routes";
 import paymentsRoutes from "../modules/payments/payments.routes";
 import checkinRoutes from "../modules/checkin/checkin.routes";
 import doorRoutes from "../modules/door/door.routes";
+import offlineRoutes from "../modules/door/offline.routes";
 import adminRoutes from "../modules/admin/admin.routes";
 import financeRoutes from "../modules/finance/finance.routes";
 import systemRoutes from "../modules/system/system.routes";
@@ -35,6 +36,7 @@ router.use("/transfers", transfersRoutes);
 router.use("/resale", resaleRoutes);
 router.use("/payments", paymentsRoutes);
 router.use("/checkin", checkinRoutes);
+router.use("/door", offlineRoutes); // offline pack and sync
 router.use("/door", doorRoutes);
 router.use("/admin", adminRoutes);
 router.use("/finance", financeRoutes);

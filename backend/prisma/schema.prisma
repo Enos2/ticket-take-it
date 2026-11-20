@@ -124,6 +124,15 @@ enum ResalePayoutStatus {
   PAID
 }
 
+enum OfflineScanOutcome {
+  ADMITTED
+  ALREADY_USED
+  UNKNOWN_TICKET
+  WRONG_EVENT
+  TICKET_VOIDED
+  WRONG_GATE
+}
+
 enum EmailTokenType {
   VERIFY_EMAIL
   RESET_PASSWORD
@@ -238,6 +247,7 @@ model Event {
   tickets      Ticket[]
   seatSections SeatSection[]
   resaleListings ResaleListing[]
+  offlineScans OfflineScan[]
 
   @@index([sellerId])
   @@index([status, startsAt])
@@ -589,6 +599,26 @@ model StaffMember {
   @@unique([sellerId, email])
   @@index([userId])
   @@index([email])
+}
+
+// A ticket scanned by a phone with no internet, uploaded once it was back online. Kept so a retried upload is never
+// counted twice, and so the organiser can review every scan that did not simply admit someone.
+model OfflineScan {
+  id          String             @id @default(cuid())
+  eventId     String
+  event       Event              @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  clientId    String // made by the phone for each scan
+  deviceId    String // which phone scanned it
+  scannedById String // who was signed in on the phone
+  scannedAt   DateTime // when the phone scanned the ticket
+  receivedAt  DateTime           @default(now()) // when the scan was uploaded
+  ticketId    String?
+  gateId      String?
+  outcome     OfflineScanOutcome
+  detail      String?
+
+  @@unique([eventId, clientId])
+  @@index([eventId, outcome])
 }
 
 // A named entrance for one event. An empty allowedTiers list admits every ticket type.
