@@ -57,6 +57,10 @@ const envSchema = z
     // Paystack: hosted checkout for cards and mobile money. Leave blank to disable.
     PAYSTACK_SECRET_KEY: optionalString,
 
+    // Stripe: hosted card checkout for buyers anywhere in the world. Leave both blank to disable.
+    STRIPE_SECRET_KEY: optionalString,
+    STRIPE_WEBHOOK_SECRET: optionalString,
+
     // Error monitoring (Sentry). Leave blank to turn it off.
     SENTRY_DSN: optionalString,
 
@@ -88,6 +92,16 @@ const envSchema = z
     // ---- Paystack ----
     if (v.PAYSTACK_SECRET_KEY && !/^sk_(test|live)_/.test(v.PAYSTACK_SECRET_KEY)) {
       add("PAYSTACK_SECRET_KEY", "Must start with sk_test_ or sk_live_ (use the SECRET key, not the public one)");
+    }
+
+    // ---- Stripe: both keys or neither ----
+    if (v.STRIPE_SECRET_KEY || v.STRIPE_WEBHOOK_SECRET) {
+      if (!v.STRIPE_SECRET_KEY) add("STRIPE_SECRET_KEY", "Required when STRIPE_WEBHOOK_SECRET is set");
+      else if (!/^(sk|rk)_(test|live)_/.test(v.STRIPE_SECRET_KEY)) {
+        add("STRIPE_SECRET_KEY", "Must start with sk_test_, sk_live_ or rk_ (use the SECRET key, not the publishable one)");
+      }
+      if (!v.STRIPE_WEBHOOK_SECRET) add("STRIPE_WEBHOOK_SECRET", "Required when STRIPE_SECRET_KEY is set (the whsec_ signing secret of your webhook endpoint)");
+      else if (!/^whsec_/.test(v.STRIPE_WEBHOOK_SECRET)) add("STRIPE_WEBHOOK_SECRET", "Must start with whsec_");
     }
 
     // ---- M-Pesa: all or nothing ----
@@ -180,12 +194,22 @@ const paystack = data.PAYSTACK_SECRET_KEY
     }
   : null;
 
+const stripe =
+  data.STRIPE_SECRET_KEY && data.STRIPE_WEBHOOK_SECRET
+    ? {
+        secretKey: data.STRIPE_SECRET_KEY,
+        webhookSecret: data.STRIPE_WEBHOOK_SECRET,
+        mode: /^(sk|rk)_live_/.test(data.STRIPE_SECRET_KEY) ? ("live" as const) : ("test" as const),
+      }
+    : null;
+
 const mockEnabled = data.ENABLE_MOCK_PAYMENTS
   ? data.ENABLE_MOCK_PAYMENTS === "true"
   : data.NODE_ENV !== "production" && Boolean(data.PAYMENT_WEBHOOK_SECRET);
 
 if (data.NODE_ENV === "production") {
-  if (!mpesa && !paystack) console.warn("[config] No payment provider is configured. Paid orders cannot be completed.");
+  if (!mpesa && !paystack && !stripe) console.warn("[config] No payment provider is configured. Paid orders cannot be completed.");
+  if (stripe?.mode === "test") console.warn("[config] Stripe is using a TEST key in production. No real money will move.");
   if (paystack?.mode === "test") console.warn("[config] Paystack is using a TEST key in production. No real money will move.");
   if (mpesa?.env === "sandbox") console.warn("[config] M-Pesa is in SANDBOX mode in production. No real money will move.");
   if (mockEnabled) console.warn("[config] Mock payments are ENABLED in production. Anyone holding PAYMENT_WEBHOOK_SECRET can mark orders paid.");
@@ -203,6 +227,7 @@ export const env = {
   ENABLE_MOCK_PAYMENTS: mockEnabled,
   mpesa, // null when M-Pesa is not configured
   paystack, // null when Paystack is not configured
+  stripe, // null when Stripe is not configured
 };
 // ==========================================
 // END OF FILE: backend/src/config/env.ts

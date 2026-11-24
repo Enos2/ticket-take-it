@@ -16,6 +16,8 @@ import * as service from "./payments.service";
 import { handleStkCallback } from "./mpesa.service";
 import { handlePaystackEvent } from "./paystack.service";
 import { verifyWebhookSignature } from "./paystack.client";
+import { handleStripeEvent } from "./stripe.service";
+import { verifyStripeEvent } from "./stripe.client";
 import { handleWebhook } from "./settlement.service";
 
 const router = Router();
@@ -79,6 +81,33 @@ router.post("/callbacks/paystack", async (req: Request, res: Response) => {
   } catch (err) {
     // A non-200 answer makes Paystack deliver the event again later.
     logger.error({ err }, "Paystack webhook processing failed");
+    return res.status(500).json({ success: false });
+  }
+
+  return res.json({ received: true });
+});
+
+// ---- Stripe webhook. Needs the RAW body, which app.ts provides for this exact path. ----
+router.post("/callbacks/stripe", async (req: Request, res: Response) => {
+  if (!env.stripe) return res.status(404).json({ success: false, message: "Not found" });
+
+  if (!Buffer.isBuffer(req.body)) {
+    logger.warn("Stripe webhook body was not raw. Check the express.raw() line in app.ts.");
+    return res.status(400).json({ success: false, message: "Invalid request" });
+  }
+
+  let event;
+  try {
+    event = verifyStripeEvent(req.body, req.header("stripe-signature"));
+  } catch {
+    return res.status(401).json({ success: false, message: "Invalid signature" });
+  }
+
+  try {
+    await handleStripeEvent(event);
+  } catch (err) {
+    // A non-200 answer makes Stripe deliver the event again later.
+    logger.error({ err }, "Stripe webhook processing failed");
     return res.status(500).json({ success: false });
   }
 

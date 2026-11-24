@@ -8,14 +8,17 @@ import { ApiError } from "../../utils/ApiError";
 import { toJsonObject } from "../../utils/json";
 import { startMpesaPayment } from "./mpesa.service";
 import { startPaystackPayment, refreshPendingPaystackPayment } from "./paystack.service";
+import { startStripePayment, refreshPendingStripePayment } from "./stripe.service";
 import type { InitializePaymentInput } from "./payments.schema";
 
 // Tells the frontend which payment buttons to show.
 // `paystack` is hosted checkout (cards, plus mobile money if enabled on your Paystack account).
+// `stripe` is hosted card checkout for buyers anywhere in the world.
 // `mpesa` is the direct M-Pesa prompt sent to the customer's phone.
 export function getPaymentMethods() {
   return {
     paystack: Boolean(env.paystack),
+    stripe: Boolean(env.stripe),
     mpesa: Boolean(env.mpesa),
     mock: env.ENABLE_MOCK_PAYMENTS,
   };
@@ -52,6 +55,12 @@ export async function initializePayment(orderId: string, userId: string, input: 
       return { ...base, provider: "PAYSTACK" as const, authorizationUrl: result.authorizationUrl };
     }
 
+    case "STRIPE": {
+      const result = await startStripePayment(order, order.user.email);
+      // The frontend sends the customer to checkoutUrl.
+      return { ...base, provider: "STRIPE" as const, checkoutUrl: result.checkoutUrl };
+    }
+
     case "MPESA": {
       const result = await startMpesaPayment(order, input.phone);
       return { ...base, provider: "MPESA" as const, checkoutRequestId: result.checkoutRequestId, message: result.message };
@@ -70,8 +79,9 @@ export async function getPaymentStatus(orderId: string, userId: string) {
   const owned = await prisma.order.findUnique({ where: { id: orderId }, select: { userId: true } });
   if (!owned || owned.userId !== userId) throw ApiError.notFound("Order not found");
 
-  // If a Paystack checkout is open, ask Paystack now instead of waiting for the webhook.
+  // If a Paystack or Stripe checkout is open, ask the provider now instead of waiting for the webhook.
   await refreshPendingPaystackPayment(orderId);
+  await refreshPendingStripePayment(orderId);
 
   const order = await prisma.order.findUniqueOrThrow({
     where: { id: orderId },

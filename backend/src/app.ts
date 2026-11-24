@@ -49,9 +49,10 @@ app.use(
 );
 app.use(generalLimiter);
 
-// Paystack signs the exact bytes it sends, so its webhook needs the raw body.
-// This MUST stay above express.json(), or the signature check will always fail.
+// Paystack and Stripe sign the exact bytes they send, so their webhooks need the raw body.
+// These MUST stay above express.json(), or the signature check will always fail.
 app.use("/api/v1/payments/callbacks/paystack", express.raw({ type: "application/json", limit: "1mb" }));
+app.use("/api/v1/payments/callbacks/stripe", express.raw({ type: "application/json", limit: "1mb" }));
 
 app.use(express.json({ limit: "100kb" }));
 
