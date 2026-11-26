@@ -1,11 +1,11 @@
 // ==========================================
 // FILE: frontend/src/pages/user/Checkout.tsx
-// PURPOSE: Pay for a held order with Paystack (card or mobile money) or an M-Pesa prompt.
+// PURPOSE: Pay for a held order with Paystack (card or mobile money), a card through Stripe, or an M-Pesa prompt.
 // ==========================================
 import { useEffect, useState } from "react";
 import { Link, Navigate, useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Clock, CreditCard, ShieldCheck, Smartphone } from "lucide-react";
+import { Clock, CreditCard, Globe, ShieldCheck, Smartphone } from "lucide-react";
 import Alert from "../../components/ui/Alert";
 import Button from "../../components/ui/Button";
 import Card from "../../components/ui/Card";
@@ -18,12 +18,13 @@ import { useAuth } from "../../lib/authStore";
 import { cx } from "../../lib/cx";
 import { formatMoney } from "../../lib/format";
 import { formatCountdown, isUnpaid, orderTitle } from "../../lib/orders";
+import type { AnyInitializedPayment, AvailablePaymentMethods } from "../../lib/payments";
 import { useCountdown } from "../../lib/useCountdown";
 import { usePaymentStatus } from "../../lib/usePaymentStatus";
 import { useTitle } from "../../lib/useTitle";
-import type { InitializedPayment, Order, PaymentMethods } from "../../lib/types";
+import type { Order } from "../../lib/types";
 
-type Provider = "PAYSTACK" | "MPESA";
+type Provider = "PAYSTACK" | "STRIPE" | "MPESA";
 
 // Same rule the server applies: Safaricom numbers, with or without the country code.
 const looksLikeKenyanPhone = (value: string) => /^(?:\+?254|0)?[17]\d{8}$/.test(value.replace(/[\s-]/g, ""));
@@ -44,7 +45,7 @@ export default function Checkout() {
 
   const methodsQuery = useQuery({
     queryKey: ["payment-methods"],
-    queryFn: () => api.get<PaymentMethods>("/payments/methods"),
+    queryFn: () => api.get<AvailablePaymentMethods>("/payments/methods"),
     staleTime: 5 * 60_000,
   });
 
@@ -91,13 +92,17 @@ export default function Checkout() {
 
   const pay = useMutation({
     mutationFn: (provider: Provider) =>
-      api.post<InitializedPayment>(
+      api.post<AnyInitializedPayment>(
         `/payments/initialize/${orderId}`,
         provider === "MPESA" ? { provider, phone: phone.trim() } : { provider }
       ),
     onSuccess: (data) => {
       if (data.provider === "PAYSTACK") {
         window.location.assign(data.authorizationUrl); // the page is replaced, so there is nothing more to do here
+        return;
+      }
+      if (data.provider === "STRIPE") {
+        window.location.assign(data.checkoutUrl); // Stripe sends the customer back to /checkout/complete
         return;
       }
       // Forget any earlier failed attempt, so it can't end this one straight away.
@@ -173,6 +178,14 @@ export default function Checkout() {
       icon: CreditCard,
     });
   }
+  if (methods?.stripe) {
+    options.push({
+      id: "STRIPE",
+      title: "International card",
+      text: "Visa, Mastercard and more, from any country. You will be taken to Stripe's secure page to finish paying.",
+      icon: Globe,
+    });
+  }
   if (methods?.mpesa && order.currency === "KES") {
     options.push({
       id: "MPESA",
@@ -185,7 +198,7 @@ export default function Checkout() {
   const selected = chosen ?? options[0]?.id ?? null;
   const phoneOk = looksLikeKenyanPhone(phone);
   const total = formatMoney(order.totalCents, order.currency);
-  const busy = pay.isPending || pay.isSuccess; // after Paystack succeeds the page is about to be replaced
+  const busy = pay.isPending || pay.isSuccess; // after Paystack or Stripe succeeds the page is about to be replaced
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-10 sm:px-6">
@@ -295,7 +308,7 @@ export default function Checkout() {
                       pay.mutate(selected);
                     }}
                   >
-                    {selected === "MPESA" ? `Send M-Pesa prompt for ${total}` : `Pay ${total}`}
+                    {selected === "MPESA" ? `Send M-Pesa prompt for ${total}` : selected === "STRIPE" ? `Pay ${total} by card` : `Pay ${total}`}
                   </Button>
 
                   <p className="mt-4 flex items-center justify-center gap-2 text-xs text-muted">
